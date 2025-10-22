@@ -7,9 +7,7 @@ use axum::{
 use serde::Serialize;
 use std::sync::Arc;
 
-use crate::repository::sqlx_impl::{
-    PgGroupRepository, PgPasswordResetRepository, PgPolicyRepository, PgUserRepository,
-};
+use crate::repository::sqlx_impl::{PgGroupRepository, PgPasswordResetRepository, PgPolicyRepository, PgSettingsRepository, PgUserRepository};
 use crate::services::{
     group_service::{CreateGroupRequest, GroupService},
     policy_service::{CreatePolicyRequest, PolicyService},
@@ -17,7 +15,7 @@ use crate::services::{
 };
 
 use crate::handler::auth::AuthenticatedUser;
-type UserServiceType = UserService<PgUserRepository, PgGroupRepository, PgPasswordResetRepository>;
+type UserServiceType = UserService<PgUserRepository, PgGroupRepository, PgPasswordResetRepository, PgSettingsRepository>;
 type GroupServiceType = GroupService<PgGroupRepository>;
 type PolicyServiceType = PolicyService<PgPolicyRepository>;
 

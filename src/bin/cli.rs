@@ -1,11 +1,15 @@
+use std::collections::HashMap;
 use clap::{Parser, Subcommand};
 use keyrunes::jwt_service::JwtService;
 use keyrunes::repository::sqlx_impl::PgUserRepository;
 use keyrunes::services::user_service::{RegisterRequest, UserService};
-use keyrunes::sqlx_impl::{PgGroupRepository, PgPasswordResetRepository};
-use keyrunes::user_service::AdminChangePasswordRequest;
+use keyrunes::sqlx_impl::{PgGroupRepository, PgPasswordResetRepository, PgSettingsRepository};
+use keyrunes::PasswordResetRepository;
+use keyrunes::user_service::{AdminChangePasswordRequest, SettingsService};
 use sqlx::PgPool;
 use std::sync::Arc;
+use tracing_subscriber::filter::LevelFilter;
+use keyrunes::{NewPasswordResetToken};
 
 #[derive(Parser)]
 #[clap(name = "Keyrunes CLI")]
@@ -62,7 +66,9 @@ async fn main() -> anyhow::Result<()> {
     dotenvy::dotenv().ok();
 
     // Initialize tracing
-    tracing_subscriber::fmt::init();
+    tracing_subscriber::fmt()
+        .with_max_level(LevelFilter::INFO)
+        .init();
 
     let cli = Cli::parse();
 
@@ -76,12 +82,25 @@ async fn main() -> anyhow::Result<()> {
     let jwt_secret = std::env::var("JWT_SECRET")
         .unwrap_or_else(|_| "your-super-secret-jwt-key-change-in-production".into());
     let jwt_service = Arc::new(JwtService::new(&jwt_secret));
+    let settings_repo = Arc::new(PgSettingsRepository::new(pool.clone()));
+    let settings_service = Arc::new(SettingsService::new(settings_repo));
+
     let service = Arc::new(UserService::new(
         user_repo,
         group_repo,
         password_reset_repo,
         jwt_service.clone(),
+        settings_service
     ));
+
+    // load settings into a hashmap from db
+    let base_url_settings: HashMap<String, String> = HashMap::from_iter(&mut service
+        .settings_service
+        .get_all_settings()
+        .await?
+        .iter().map(|setting| {
+        (setting.key.clone(), setting.value.clone())
+    }));
 
     match cli.command {
         Commands::Register {
@@ -123,7 +142,7 @@ async fn main() -> anyhow::Result<()> {
 
             let user_group = service.get_user_group_names(user.user_id).await?;
 
-            let token  = jwt_service.generate_token(
+            let jwt_generated_token  = jwt_service.generate_token(
                 user.user_id,
                 user.username.as_str(),
                 user.email.as_str(),
@@ -132,8 +151,29 @@ async fn main() -> anyhow::Result<()> {
                 tracing::error!("Error generating token: {}", err);
             });
 
+            // use the passwordrepository, to generate token, save in the database and return to token
+            // before saving you need to check whether the token is expired by checking if the diff
+            // btn create_at amd and the present time is
+
+
+            let expires_at = chrono::Utc::now() + chrono::Duration::seconds(3600);
+
+            let new_password_token = NewPasswordResetToken{
+                user_id: user.user_id,
+                token: jwt_generated_token.unwrap(),
+                expires_at
+            };
+            
+            let password_reset_token = service
+                .password_reset_repo
+                .create_reset_token(new_password_token)
+                .await?;
+
+            let base_url = base_url_settings.get("BASE_URL").unwrap();
+
             tracing::info!("Generated reset url for user {} below", username);
-            tracing::info!("reset url http://127.0.0.1:3000?token={}", token.unwrap())
+            tracing::info!("reset url {}?token={}", base_url, password_reset_token.token);
+
 
         },
         Commands::Set_User_Password {
@@ -167,7 +207,7 @@ async fn main() -> anyhow::Result<()> {
 mod tests {
     use std::process::Command;
     // populate the database with the user details below before running tests.
-    // make sure you have run cargo build
+    // make sure you have ran cargo build to get the binary in the release directory
 
     const USERNAME: &str = "test";
     const EMAIL: &str = "test@gmail.com";

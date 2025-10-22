@@ -7,9 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 use crate::handler::errors::ErrorResponse;
-use crate::repository::sqlx_impl::{
-    PgGroupRepository, PgPasswordResetRepository, PgUserRepository,
-};
+use crate::repository::sqlx_impl::{PgGroupRepository, PgPasswordResetRepository, PgSettingsRepository, PgUserRepository};
 use crate::services::user_service::{
     ChangePasswordRequest, ForgotPasswordRequest, RegisterRequest, ResetPasswordRequest,
     UserService,
@@ -65,7 +63,7 @@ pub struct MessageResponse {
     pub message: String,
 }
 
-type UserServiceType = UserService<PgUserRepository, PgGroupRepository, PgPasswordResetRepository>;
+type UserServiceType = UserService<PgUserRepository, PgGroupRepository, PgPasswordResetRepository, PgSettingsRepository>;
 
 /// POST /api/register
 pub async fn register_api(
