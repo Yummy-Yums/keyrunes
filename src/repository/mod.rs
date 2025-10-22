@@ -126,6 +126,23 @@ pub struct NewPasswordResetToken {
     pub expires_at: DateTime<Utc>,
 }
 
+#[derive(sqlx::FromRow, Debug, Clone)]
+pub struct Settings {
+    pub settings_id: i32,
+    pub key: String,
+    pub value: String,
+    pub description: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug)]
+pub struct CreateSettings {
+    pub key: String,
+    pub value: String,
+    pub description: Option<String>,
+}
+
 // User Repository Trait
 #[async_trait]
 pub trait UserRepository: Send + Sync + 'static {
@@ -200,6 +217,15 @@ pub trait PasswordResetRepository: Send + Sync + 'static {
     async fn find_valid_token(&self, token: &str) -> Result<Option<PasswordResetToken>>;
     async fn mark_token_used(&self, token_id: i64) -> Result<()>;
     async fn cleanup_expired_tokens(&self) -> Result<()>;
+}
+
+#[async_trait]
+pub trait SettingsRepository: Send + Sync + 'static {
+    async fn create_settings(&self, settings: CreateSettings) -> Result<Option<CreateSettings>>;
+    async fn get_settings_by_key(&self, key: &str) -> Result<Option<Settings>>;
+    async fn get_all_settings(&self) -> Result<Vec<Settings>>;
+    async fn update_settings_by_key(&self, key: &str, value: &str) -> Result<()>;
+    async fn delete_settings_by_key(&self, key: &str) -> Result<()>;
 }
 
 pub mod sqlx_impl;

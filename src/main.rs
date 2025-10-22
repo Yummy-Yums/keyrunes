@@ -23,6 +23,8 @@ use crate::handler::auth::{require_auth, require_superadmin};
 use crate::handler::errors::handler_404;
 use crate::handler::logging::{LogLevel, init_logging, request_logging_middleware};
 
+use crate::repository::sqlx_impl::PgSettingsRepository;
+use crate::services::user_service::SettingsService;
 use repository::sqlx_impl::{PgGroupRepository, PgPasswordResetRepository, PgUserRepository};
 use services::{jwt_service::JwtService, user_service::UserService};
 
@@ -75,6 +77,8 @@ async fn main() -> anyhow::Result<()> {
         "your-super-secret-jwt-key-change-in-production".into()
     });
     let jwt_service = Arc::new(JwtService::new(&jwt_secret));
+    let settings_repo = Arc::new(PgSettingsRepository::new(pool.clone()));
+    let settings_service = Arc::new(SettingsService::new(settings_repo));
 
     // Initialize user service
     let user_service = Arc::new(UserService::new(
@@ -82,6 +86,7 @@ async fn main() -> anyhow::Result<()> {
         group_repo,
         password_reset_repo,
         jwt_service.clone(),
+        settings_service,
     ));
 
     tracing::info!("📄 Loading templates...");
@@ -173,11 +178,14 @@ mod tests {
         let group_repo = Arc::new(PgGroupRepository::new(pool.clone()));
         let password_reset_repo = Arc::new(PgPasswordResetRepository::new(pool.clone()));
         let jwt_service = Arc::new(JwtService::new("test_secret"));
+        let settings_repo = Arc::new(PgSettingsRepository::new(pool.clone()));
+        let settings_service = Arc::new(SettingsService::new(settings_repo));
         let user_service = Arc::new(UserService::new(
             user_repo,
             group_repo,
             password_reset_repo,
             jwt_service.clone(),
+            settings_service.clone(),
         ));
 
         let tera = Tera::new("templates/**/*").expect("Error loading templates");

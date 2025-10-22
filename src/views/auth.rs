@@ -1,3 +1,7 @@
+use crate::repository::sqlx_impl::{
+    PgGroupRepository, PgPasswordResetRepository, PgSettingsRepository, PgUserRepository,
+};
+use crate::services::user_service::{ChangePasswordRequest, RegisterRequest, UserService};
 use axum::{
     extract::{Extension, Form, Query},
     http::{HeaderMap, StatusCode},
@@ -7,12 +11,12 @@ use serde::Deserialize;
 use std::sync::Arc;
 use tera::Context;
 
-use crate::repository::sqlx_impl::{
-    PgGroupRepository, PgPasswordResetRepository, PgUserRepository,
-};
-use crate::services::user_service::{ChangePasswordRequest, RegisterRequest, UserService};
-
-type UserServiceType = UserService<PgUserRepository, PgGroupRepository, PgPasswordResetRepository>;
+type UserServiceType = UserService<
+    PgUserRepository,
+    PgGroupRepository,
+    PgPasswordResetRepository,
+    PgSettingsRepository,
+>;
 
 #[derive(serde::Deserialize)]
 pub struct RegisterForm {

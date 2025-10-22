@@ -175,6 +175,71 @@ impl UserRepository for PgUserRepository {
     }
 }
 
+pub struct PgSettingsRepository {
+    pub pool: PgPool,
+}
+
+impl PgSettingsRepository {
+    pub fn new(pool: PgPool) -> Self {
+        Self { pool }
+    }
+}
+
+#[async_trait]
+impl SettingsRepository for PgSettingsRepository {
+    async fn create_settings(&self, settings: CreateSettings) -> Result<Option<CreateSettings>> {
+        let record = sqlx::query_as!(
+            CreateSettings,
+            r#"INSERT INTO settings (key, value, description) VALUES ($1, $2, $3)
+               RETURNING key, value, description"#,
+            settings.key,
+            settings.value,
+            settings.description,
+        )
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(record)
+    }
+
+    async fn get_settings_by_key(&self, key: &str) -> Result<Option<Settings>> {
+        let record = sqlx::query_as!(Settings, r#"SELECT * FROM settings WHERE key = $1"#, key)
+            .fetch_optional(&self.pool)
+            .await?;
+
+        Ok(record)
+    }
+
+    async fn get_all_settings(&self) -> Result<Vec<Settings>> {
+        let records = sqlx::query_as!(Settings, r#"SELECT * FROM settings"#)
+            .fetch_all(&self.pool)
+            .await?;
+
+        Ok(records)
+    }
+
+    async fn update_settings_by_key(&self, key: &str, updated_value: &str) -> Result<()> {
+        sqlx::query_as!(
+            Settings,
+            r#"UPDATE settings SET value = $2 WHERE key = $1"#,
+            key,
+            updated_value
+        )
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    async fn delete_settings_by_key(&self, key: &str) -> Result<()> {
+        sqlx::query_as!(Settings, r#"DELETE FROM settings WHERE key = $1"#, key,)
+            .execute(&self.pool)
+            .await?;
+
+        Ok(())
+    }
+}
+
 pub struct PgGroupRepository {
     pub pool: PgPool,
 }

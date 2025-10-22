@@ -1,6 +1,7 @@
 use crate::domain::user::{Email, Password};
 use crate::repository::{
-    GroupRepository, NewPasswordResetToken, NewUser, PasswordResetRepository, UserRepository,
+    CreateSettings, GroupRepository, NewPasswordResetToken, NewUser, PasswordResetRepository,
+    Settings, SettingsRepository, User, UserRepository,
 };
 use crate::services::jwt_service::JwtService;
 use anyhow::{Result, anyhow};
@@ -63,6 +64,12 @@ pub struct ChangePasswordRequest {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+pub struct AdminChangePasswordRequest {
+    pub user_id: i64,
+    pub new_password: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct ForgotPasswordRequest {
     pub email: String,
 }
@@ -74,25 +81,35 @@ pub struct ResetPasswordRequest {
 }
 
 #[derive(Clone)]
-pub struct UserService<U: UserRepository, G: GroupRepository, P: PasswordResetRepository> {
+pub struct UserService<
+    U: UserRepository,
+    G: GroupRepository,
+    P: PasswordResetRepository,
+    S: SettingsRepository,
+> {
     pub user_repo: Arc<U>,
     pub group_repo: Arc<G>,
     pub password_reset_repo: Arc<P>,
     pub jwt_service: Arc<JwtService>,
+    pub settings_service: Arc<SettingsService<S>>,
 }
 
-impl<U: UserRepository, G: GroupRepository, P: PasswordResetRepository> UserService<U, G, P> {
+impl<U: UserRepository, G: GroupRepository, P: PasswordResetRepository, S: SettingsRepository>
+    UserService<U, G, P, S>
+{
     pub fn new(
         user_repo: Arc<U>,
         group_repo: Arc<G>,
         password_reset_repo: Arc<P>,
         jwt_service: Arc<JwtService>,
+        settings_service: Arc<SettingsService<S>>,
     ) -> Self {
         Self {
             user_repo,
             group_repo,
             password_reset_repo,
             jwt_service,
+            settings_service,
         }
     }
 
@@ -323,6 +340,37 @@ impl<U: UserRepository, G: GroupRepository, P: PasswordResetRepository> UserServ
         Ok(())
     }
 
+    pub async fn update_password(&self, req: AdminChangePasswordRequest) -> Result<()> {
+        // Validate new password
+        if req.new_password.len() < 8 {
+            return Err(anyhow!("new password too short"));
+        }
+
+        // Hash new password
+        let new_password_hash = self.hash_password(&req.new_password)?;
+
+        // Update password
+        self.user_repo
+            .update_user_password(req.user_id, &new_password_hash)
+            .await?;
+
+        Ok(())
+    }
+
+    pub async fn find_user_by_username(&self, username: &String) -> Option<User> {
+        let user: Option<User> = self
+            .user_repo
+            .find_by_username(username.as_str())
+            .await
+            .unwrap();
+        user
+    }
+
+    pub async fn find_user_by_email(&self, email: &String) -> Option<User> {
+        let user: Option<User> = self.user_repo.find_by_email(email.as_str()).await.unwrap();
+        user
+    }
+
     pub async fn refresh_token(&self, token: &str) -> Result<String> {
         self.jwt_service.refresh_token(token)
     }
@@ -350,7 +398,7 @@ impl<U: UserRepository, G: GroupRepository, P: PasswordResetRepository> UserServ
         })
     }
 
-    async fn get_user_group_names(&self, user_id: i64) -> Result<Vec<String>> {
+    pub async fn get_user_group_names(&self, user_id: i64) -> Result<Vec<String>> {
         let groups = self.user_repo.get_user_groups(user_id).await?;
         Ok(groups.into_iter().map(|g| g.name).collect())
     }
@@ -394,15 +442,73 @@ impl<U: UserRepository, G: GroupRepository, P: PasswordResetRepository> UserServ
     }
 }
 
+pub struct SettingsService<S: SettingsRepository> {
+    settings_repo: Arc<S>,
+}
+
+impl<S: SettingsRepository> SettingsService<S> {
+    pub fn new(settings_repo: Arc<S>) -> Self {
+        Self { settings_repo }
+    }
+
+    pub async fn get_all_settings(&self) -> Result<Vec<Settings>> {
+        self.settings_repo.get_all_settings().await
+    }
+
+    pub async fn find_settings_by_key(&self, key: &str) -> Result<Settings> {
+        let record = self.settings_repo.get_settings_by_key(key).await?;
+
+        if record.is_none() {
+            return Err(anyhow!("Settings with {} not found", key));
+        }
+
+        Ok(record.unwrap())
+    }
+
+    pub async fn insert_settings(&self, key: String, value: String) -> Result<()> {
+        let record = self.settings_repo.get_settings_by_key(key.as_str()).await?;
+
+        if record.is_some() {
+            return Err(anyhow!("Settings with {} already created", key));
+        }
+
+        self.settings_repo
+            .create_settings(CreateSettings {
+                key,
+                value,
+                description: None,
+            })
+            .await?;
+
+        Ok(())
+    }
+
+    pub async fn update_settings(&self, key: String, value: String) -> Result<()> {
+        self.settings_repo
+            .update_settings_by_key(key.as_str(), value.as_str())
+            .await?;
+
+        Ok(())
+    }
+
+    pub async fn delete_settings(&self, key: String) -> Result<()> {
+        self.settings_repo
+            .delete_settings_by_key(key.as_str())
+            .await?;
+
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::repository::User;
-    use crate::repository::{Group, NewGroup, Policy, PolicyEffect};
+    use crate::repository::{Group, NewGroup, Policy};
     use anyhow::Result;
     use async_trait::async_trait;
-    use chrono::{DateTime, Utc};
-    use std::sync::{Arc, Mutex};
+    use chrono::Utc;
+    use std::sync::Mutex;
     use uuid::Uuid;
 
     // Mock implementations for testing
@@ -572,4 +678,6 @@ mod tests {
             Ok(())
         }
     }
+
+    // TODO add tests for Settings Repository
 }

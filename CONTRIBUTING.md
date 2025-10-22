@@ -95,9 +95,18 @@ Run the CLI application:
    cargo run --bin cli
 ```
 
+Before you run tests, make sure to register a test user with the below details. Some unit tests depends on this data.
+Also make sure you have ran ``cargo build`` to get the binary available in the release directory
+
+```
+ username = test
+ email = test@gmail.com
+ password = password
+```
+
 Run tests:
 ```bash
-  cargo test 
+  cargo test
 ```
 
 Code Style and Standards
