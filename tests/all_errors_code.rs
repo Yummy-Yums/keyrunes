@@ -1,13 +1,13 @@
 /// Comprehensive integration tests for all HTTP error responses
-/// 
+///
 /// This module tests that all error responses across the application
 /// return standardized JSON format with proper status codes.
 use axum::{
+    Router,
     body::Body,
     extract::Extension,
     http::{Request, StatusCode},
     routing::{get, post},
-    Router,
 };
 use serde_json::Value;
 use sqlx::postgres::PgPoolOptions;
@@ -238,7 +238,7 @@ async fn test_404_not_found_returns_json() {
 #[tokio::test]
 async fn test_all_error_codes_have_consistent_structure() {
     let app = create_test_app().await;
-    
+
     let test_cases = vec![
         ("/test/400", StatusCode::BAD_REQUEST, 400),
         ("/test/401", StatusCode::UNAUTHORIZED, 401),
@@ -249,12 +249,7 @@ async fn test_all_error_codes_have_consistent_structure() {
     for (path, expected_status, expected_code) in test_cases {
         let response = app
             .clone()
-            .oneshot(
-                Request::builder()
-                    .uri(path)
-                    .body(Body::empty())
-                    .unwrap(),
-            )
+            .oneshot(Request::builder().uri(path).body(Body::empty()).unwrap())
             .await
             .unwrap();
 
@@ -313,12 +308,7 @@ async fn test_error_messages_are_descriptive() {
     for (path, expected_substring) in test_cases {
         let response = app
             .clone()
-            .oneshot(
-                Request::builder()
-                    .uri(path)
-                    .body(Body::empty())
-                    .unwrap(),
-            )
+            .oneshot(Request::builder().uri(path).body(Body::empty()).unwrap())
             .await
             .unwrap();
 
@@ -346,12 +336,7 @@ async fn test_errors_dont_leak_sensitive_info() {
     for path in paths {
         let response = app
             .clone()
-            .oneshot(
-                Request::builder()
-                    .uri(path)
-                    .body(Body::empty())
-                    .unwrap(),
-            )
+            .oneshot(Request::builder().uri(path).body(Body::empty()).unwrap())
             .await
             .unwrap();
 

@@ -21,12 +21,12 @@ mod views;
 
 use crate::handler::auth::{require_auth, require_superadmin};
 use crate::handler::errors::handler_404;
-use crate::handler::logging::{init_logging, request_logging_middleware, LogLevel};
+use crate::handler::logging::{LogLevel, init_logging, request_logging_middleware};
 
-use repository::sqlx_impl::{PgGroupRepository, PgPasswordResetRepository, PgUserRepository};
-use services::{jwt_service::JwtService, user_service::UserService};
 use crate::repository::sqlx_impl::PgSettingsRepository;
 use crate::services::user_service::SettingsService;
+use repository::sqlx_impl::{PgGroupRepository, PgPasswordResetRepository, PgUserRepository};
+use services::{jwt_service::JwtService, user_service::UserService};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -86,7 +86,7 @@ async fn main() -> anyhow::Result<()> {
         group_repo,
         password_reset_repo,
         jwt_service.clone(),
-        settings_service
+        settings_service,
     ));
 
     tracing::info!("📄 Loading templates...");

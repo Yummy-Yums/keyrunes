@@ -7,7 +7,9 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 use crate::handler::errors::ErrorResponse;
-use crate::repository::sqlx_impl::{PgGroupRepository, PgPasswordResetRepository, PgSettingsRepository, PgUserRepository};
+use crate::repository::sqlx_impl::{
+    PgGroupRepository, PgPasswordResetRepository, PgSettingsRepository, PgUserRepository,
+};
 use crate::services::user_service::{
     ChangePasswordRequest, ForgotPasswordRequest, RegisterRequest, ResetPasswordRequest,
     UserService,
@@ -63,7 +65,12 @@ pub struct MessageResponse {
     pub message: String,
 }
 
-type UserServiceType = UserService<PgUserRepository, PgGroupRepository, PgPasswordResetRepository, PgSettingsRepository>;
+type UserServiceType = UserService<
+    PgUserRepository,
+    PgGroupRepository,
+    PgPasswordResetRepository,
+    PgSettingsRepository,
+>;
 
 /// POST /api/register
 pub async fn register_api(
@@ -199,8 +206,9 @@ pub async fn reset_password_page(
 
     match tmpl.render("reset_password.html", &ctx) {
         Ok(body) => (StatusCode::OK, axum::response::Html(body)).into_response(),
-        Err(e) => ErrorResponse::internal_server_error(format!("Template error: {}", e))
-            .into_response(),
+        Err(e) => {
+            ErrorResponse::internal_server_error(format!("Template error: {}", e)).into_response()
+        }
     }
 }
 

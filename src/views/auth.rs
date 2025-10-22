@@ -1,3 +1,7 @@
+use crate::repository::sqlx_impl::{
+    PgGroupRepository, PgPasswordResetRepository, PgSettingsRepository, PgUserRepository,
+};
+use crate::services::user_service::{ChangePasswordRequest, RegisterRequest, UserService};
 use axum::{
     extract::{Extension, Form, Query},
     http::{HeaderMap, StatusCode},
@@ -6,12 +10,13 @@ use axum::{
 use serde::Deserialize;
 use std::sync::Arc;
 use tera::Context;
-use crate::repository::sqlx_impl::{
-    PgGroupRepository, PgPasswordResetRepository, PgUserRepository,PgSettingsRepository
-};
-use crate::services::user_service::{ChangePasswordRequest, RegisterRequest, UserService};
 
-type UserServiceType = UserService<PgUserRepository, PgGroupRepository, PgPasswordResetRepository, PgSettingsRepository>;
+type UserServiceType = UserService<
+    PgUserRepository,
+    PgGroupRepository,
+    PgPasswordResetRepository,
+    PgSettingsRepository,
+>;
 
 #[derive(serde::Deserialize)]
 pub struct RegisterForm {
@@ -232,7 +237,7 @@ pub async fn reset_password_page(
 }
 
 /// Helper function to extract Bearer token from Authorization header or cookies
-/// 
+///
 /// FIXED: Properly handles cookie parsing without panicking
 fn extract_bearer_token_from_cookie_or_header(headers: &HeaderMap) -> Option<String> {
     // First try Authorization header
@@ -250,7 +255,7 @@ fn extract_bearer_token_from_cookie_or_header(headers: &HeaderMap) -> Option<Str
             // Parse cookies safely
             for cookie in cookie_str.split(';') {
                 let cookie = cookie.trim();
-                
+
                 // Check if this is a jwt_token cookie
                 if let Some(token_value) = cookie.strip_prefix("jwt_token=") {
                     // Only return if there's actually a value

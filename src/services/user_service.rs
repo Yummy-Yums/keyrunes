@@ -1,14 +1,17 @@
 use crate::domain::user::{Email, Password};
-use crate::repository::{CreateSettings, GroupRepository, NewPasswordResetToken, NewUser, PasswordResetRepository, Settings, SettingsRepository, User, UserRepository};
+use crate::repository::{
+    CreateSettings, GroupRepository, NewPasswordResetToken, NewUser, PasswordResetRepository,
+    Settings, SettingsRepository, User, UserRepository,
+};
 use crate::services::jwt_service::JwtService;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use argon2::{
-    password_hash::{PasswordHasher, SaltString},
     Argon2,
+    password_hash::{PasswordHasher, SaltString},
 };
 use chrono::{Duration, Utc};
 use password_hash::{PasswordHash, PasswordVerifier};
-use rand::{thread_rng, Rng};
+use rand::{Rng, thread_rng};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -78,28 +81,35 @@ pub struct ResetPasswordRequest {
 }
 
 #[derive(Clone)]
-pub struct UserService<U: UserRepository, G: GroupRepository, P: PasswordResetRepository, S: SettingsRepository> {
+pub struct UserService<
+    U: UserRepository,
+    G: GroupRepository,
+    P: PasswordResetRepository,
+    S: SettingsRepository,
+> {
     pub user_repo: Arc<U>,
     pub group_repo: Arc<G>,
     pub password_reset_repo: Arc<P>,
     pub jwt_service: Arc<JwtService>,
-    pub settings_service: Arc<SettingsService<S>>
+    pub settings_service: Arc<SettingsService<S>>,
 }
 
-impl<U: UserRepository, G: GroupRepository, P: PasswordResetRepository, S: SettingsRepository> UserService<U, G, P, S> {
+impl<U: UserRepository, G: GroupRepository, P: PasswordResetRepository, S: SettingsRepository>
+    UserService<U, G, P, S>
+{
     pub fn new(
         user_repo: Arc<U>,
         group_repo: Arc<G>,
         password_reset_repo: Arc<P>,
         jwt_service: Arc<JwtService>,
-        settings_service: Arc<SettingsService<S>>
+        settings_service: Arc<SettingsService<S>>,
     ) -> Self {
         Self {
             user_repo,
             group_repo,
             password_reset_repo,
             jwt_service,
-            settings_service
+            settings_service,
         }
     }
 
@@ -346,22 +356,18 @@ impl<U: UserRepository, G: GroupRepository, P: PasswordResetRepository, S: Setti
 
         Ok(())
     }
-    
+
     pub async fn find_user_by_username(&self, username: &String) -> Option<User> {
         let user: Option<User> = self
-                .user_repo
-                .find_by_username(username.as_str())
-                .await
-                .unwrap();
+            .user_repo
+            .find_by_username(username.as_str())
+            .await
+            .unwrap();
         user
     }
 
     pub async fn find_user_by_email(&self, email: &String) -> Option<User> {
-        let user: Option<User> = self
-                .user_repo
-                .find_by_email(email.as_str())
-                .await
-                .unwrap();
+        let user: Option<User> = self.user_repo.find_by_email(email.as_str()).await.unwrap();
         user
     }
 
@@ -437,16 +443,12 @@ impl<U: UserRepository, G: GroupRepository, P: PasswordResetRepository, S: Setti
 }
 
 pub struct SettingsService<S: SettingsRepository> {
-    settings_repo: Arc<S>
+    settings_repo: Arc<S>,
 }
 
 impl<S: SettingsRepository> SettingsService<S> {
-    pub fn new(
-       settings_repo: Arc<S>,
-    ) -> Self {
-        Self {
-            settings_repo
-        }
+    pub fn new(settings_repo: Arc<S>) -> Self {
+        Self { settings_repo }
     }
 
     pub async fn get_all_settings(&self) -> Result<Vec<Settings>> {
@@ -454,26 +456,19 @@ impl<S: SettingsRepository> SettingsService<S> {
     }
 
     pub async fn find_settings_by_key(&self, key: &str) -> Result<Settings> {
+        let record = self.settings_repo.get_settings_by_key(key).await?;
 
-        let record = self
-            .settings_repo
-            .get_settings_by_key(key)
-            .await?;
-
-        if record.is_none(){
-          return Err(anyhow!("Settings with {} not found", key));
+        if record.is_none() {
+            return Err(anyhow!("Settings with {} not found", key));
         }
 
         Ok(record.unwrap())
     }
 
     pub async fn insert_settings(&self, key: String, value: String) -> Result<()> {
-        let record = self
-            .settings_repo
-            .get_settings_by_key(key.as_str())
-            .await?;
+        let record = self.settings_repo.get_settings_by_key(key.as_str()).await?;
 
-        if record.is_some(){
+        if record.is_some() {
             return Err(anyhow!("Settings with {} already created", key));
         }
 
@@ -481,18 +476,15 @@ impl<S: SettingsRepository> SettingsService<S> {
             .create_settings(CreateSettings {
                 key,
                 value,
-                description: None
+                description: None,
             })
             .await?;
 
         Ok(())
-
     }
 
     pub async fn update_settings(&self, key: String, value: String) -> Result<()> {
-
-        self
-            .settings_repo
+        self.settings_repo
             .update_settings_by_key(key.as_str(), value.as_str())
             .await?;
 
@@ -500,16 +492,13 @@ impl<S: SettingsRepository> SettingsService<S> {
     }
 
     pub async fn delete_settings(&self, key: String) -> Result<()> {
-        self
-            .settings_repo
+        self.settings_repo
             .delete_settings_by_key(key.as_str())
-             .await?;
+            .await?;
 
         Ok(())
     }
 }
-
-
 
 #[cfg(test)]
 mod tests {
@@ -690,5 +679,5 @@ mod tests {
         }
     }
 
-    // add tests for Settings Repository
+    // TODO add tests for Settings Repository
 }

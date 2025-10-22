@@ -15,7 +15,10 @@ impl ErrorResponse {
     /// Create a new error response
     pub fn new(status: StatusCode, message: impl Into<String>) -> Self {
         Self {
-            error: status.canonical_reason().unwrap_or("Unknown Error").to_string(),
+            error: status
+                .canonical_reason()
+                .unwrap_or("Unknown Error")
+                .to_string(),
             message: message.into(),
             status_code: status.as_u16(),
         }
@@ -49,9 +52,9 @@ impl ErrorResponse {
 
 impl IntoResponse for ErrorResponse {
     fn into_response(self) -> Response {
-        let status = StatusCode::from_u16(self.status_code)
-            .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
-        
+        let status =
+            StatusCode::from_u16(self.status_code).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+
         (status, Json(self)).into_response()
     }
 }
@@ -61,9 +64,7 @@ fn wants_json(headers: &HeaderMap) -> bool {
     headers
         .get("accept")
         .and_then(|v| v.to_str().ok())
-        .map(|accept| {
-            accept.contains("application/json") || accept.contains("*/json")
-        })
+        .map(|accept| accept.contains("application/json") || accept.contains("*/json"))
         .unwrap_or(false)
 }
 

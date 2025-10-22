@@ -1,15 +1,15 @@
 /// Tests for smart 404 handler
-/// 
+///
 /// This test suite verifies that the 404 handler correctly returns:
 /// - JSON for API routes (/api/*)
 /// - JSON when Accept header contains application/json
 /// - HTML for browser requests
 use axum::{
+    Router,
     body::Body,
     extract::Extension,
     http::{Request, StatusCode},
     routing::get,
-    Router,
 };
 use sqlx::postgres::PgPoolOptions;
 use std::sync::Arc;
@@ -47,8 +47,8 @@ mod test_handlers {
 
     impl IntoResponse for ErrorResponse {
         fn into_response(self) -> Response {
-            let status = StatusCode::from_u16(self.status_code)
-                .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+            let status =
+                StatusCode::from_u16(self.status_code).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
             (status, Json(self)).into_response()
         }
     }
@@ -57,9 +57,7 @@ mod test_handlers {
         headers
             .get("accept")
             .and_then(|v| v.to_str().ok())
-            .map(|accept| {
-                accept.contains("application/json") || accept.contains("*/json")
-            })
+            .map(|accept| accept.contains("application/json") || accept.contains("*/json"))
             .unwrap_or(false)
     }
 
@@ -358,5 +356,8 @@ async fn test_mixed_accept_headers() {
 
     // Should return JSON because it's explicitly requested
     let json: Result<serde_json::Value, _> = serde_json::from_slice(&body);
-    assert!(json.is_ok(), "Should return JSON when application/json is in Accept header");
+    assert!(
+        json.is_ok(),
+        "Should return JSON when application/json is in Accept header"
+    );
 }
