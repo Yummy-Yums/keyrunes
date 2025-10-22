@@ -149,10 +149,7 @@ async fn main() -> anyhow::Result<()> {
                     user.email.as_str(),
                     user_group,
                 )
-                .map_err(|err| {
-                    tracing::error!("Error generating token: {}", err);
-                });
-
+                .map_err(|err| tracing::error!("Error generating token: {}", err));
 
             let expires_at = chrono::Utc::now() + chrono::Duration::seconds(3600);
 

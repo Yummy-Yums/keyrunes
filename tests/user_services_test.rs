@@ -208,6 +208,12 @@ impl keyrunes::repository::GroupRepository for MockGroupRepository {
     }
 }
 
+// Mock Settings Repository
+struct MockSettingsRepository {}
+
+// Mock Settings Service
+struct MockSettingsService<MockSettingsRepository>;
+
 // Mock Password Reset Repository
 struct MockPasswordResetRepository;
 
@@ -252,6 +258,7 @@ async fn test_register_and_login() {
     let jwt_service = Arc::new(keyrunes::services::jwt_service::JwtService::new(
         "test_secret",
     ));
+    let settings_service = Arc::new(MockSettingsService);
 
     // Create service
     let service = UserService::new(
@@ -259,6 +266,7 @@ async fn test_register_and_login() {
         group_repo,
         password_reset_repo,
         jwt_service,
+        settings_service,
     );
 
     // Create registration request
