@@ -1,18 +1,21 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use chrono::Utc;
-use keyrunes::UserGroup;
 use keyrunes::domain::user::{Email, Password};
 use keyrunes::group_service::{CreateGroupRequest, GroupService};
 use keyrunes::repository::{Group, NewUser, Policy, User, UserRepository};
 use keyrunes::services::user_service::{RegisterRequest, UserService};
-use keyrunes::user_service::CreateUserRequest;
+use keyrunes::user_service::{CreateUserRequest, SettingsService};
+use keyrunes::{CreateSettings, Settings, SettingsRepository, UserGroup};
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
 type Store<T> = Arc<Mutex<Vec<T>>>;
 type GroupStore = Store<Group>;
 type UserGroupStore = Store<UserGroup>;
+type SettingsStore = Store<Settings>;
+type UserServiceType =
+    UserService<MockRepo, MockGroupRepository, MockPasswordResetRepository, MockSettingsRepository>;
 
 fn create_stores() -> (GroupStore, UserGroupStore) {
     let group_store = Arc::new(Mutex::new(Vec::new()));
@@ -209,10 +212,103 @@ impl keyrunes::repository::GroupRepository for MockGroupRepository {
 }
 
 // Mock Settings Repository
-struct MockSettingsRepository {}
+struct MockSettingsRepository {
+    settings_store: SettingsStore,
+}
 
-// Mock Settings Service
-struct MockSettingsService<MockSettingsRepository>;
+impl MockSettingsRepository {
+    fn new() -> Self {
+        Self {
+            settings_store: Self::create_stores(),
+        }
+    }
+
+    fn create_stores() -> SettingsStore {
+        let settings_store: SettingsStore = Arc::new(Mutex::new(Vec::new()));
+
+        settings_store.lock().unwrap().push(Settings {
+            settings_id: 0,
+            key: "test_key".to_string(),
+            value: "test_value".to_string(),
+            description: Some("Test settings".to_string()),
+            created_at: Default::default(),
+            updated_at: Default::default(),
+        });
+
+        settings_store.lock().unwrap().push(Settings {
+            settings_id: 1,
+            key: "test_key_1".to_string(),
+            value: "test_value_1".to_string(),
+            description: Some("Test settings 1".to_string()),
+            created_at: Default::default(),
+            updated_at: Default::default(),
+        });
+
+        settings_store
+    }
+}
+
+#[async_trait]
+impl keyrunes::repository::SettingsRepository for MockSettingsRepository {
+    async fn create_settings(&self, settings: CreateSettings) -> Result<Option<CreateSettings>> {
+        let settings_record = Settings {
+            settings_id: 22,
+            key: settings.key.clone(),
+            value: settings.value.clone(),
+            description: settings.description.clone(),
+            created_at: Default::default(),
+            updated_at: Default::default(),
+        };
+
+        self.settings_store.lock().unwrap().push(settings_record);
+
+        Ok(Some(settings))
+    }
+
+    async fn get_settings_by_key(&self, key: &str) -> Result<Option<Settings>> {
+        let res = self
+            .settings_store
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|s| s.key == key)
+            .cloned();
+
+        Ok(res)
+    }
+
+    async fn get_all_settings(&self) -> Result<Vec<Settings>> {
+        let res = self
+            .settings_store
+            .lock()
+            .unwrap()
+            .iter()
+            .cloned()
+            .collect();
+
+        Ok(res)
+    }
+
+    async fn update_settings_by_key(&self, key: &str, value: &str) -> Result<()> {
+        if let Some(s) = self
+            .settings_store
+            .lock()
+            .unwrap()
+            .iter_mut()
+            .find(|s| s.key == key)
+        {
+            s.value = value.to_string();
+        }
+
+        Ok(())
+    }
+
+    async fn delete_settings_by_key(&self, key: &str) -> Result<()> {
+        self.settings_store.lock().unwrap().retain(|s| s.key != key);
+
+        Ok(())
+    }
+}
 
 // Mock Password Reset Repository
 struct MockPasswordResetRepository;
@@ -242,9 +338,9 @@ impl keyrunes::repository::PasswordResetRepository for MockPasswordResetReposito
     }
 }
 
-#[tokio::test]
-async fn test_register_and_login() {
-    // Setup repositories
+// TODO - test the crud  of the settings repo, check for duplication
+
+fn helper_service() -> UserServiceType {
     let (group_store, user_groups_store) = create_stores();
     let user_repo = Arc::new(MockRepo::new(
         Arc::clone(&group_store),
@@ -258,16 +354,89 @@ async fn test_register_and_login() {
     let jwt_service = Arc::new(keyrunes::services::jwt_service::JwtService::new(
         "test_secret",
     ));
-    let settings_service = Arc::new(MockSettingsService);
 
-    // Create service
+    let settings_repo = Arc::new(MockSettingsRepository::new());
+    let settings_service = Arc::new(SettingsService::new(settings_repo));
+
     let service = UserService::new(
-        user_repo.clone(),
+        user_repo,
         group_repo,
         password_reset_repo,
         jwt_service,
         settings_service,
     );
+
+    service
+}
+
+#[tokio::test]
+async fn test_settings_functionality() {
+    let service = helper_service();
+
+    let test_key = String::from("settings test key");
+    let test_key_update = String::from("settings test key updated");
+    let test_value = String::from("settings test value");
+    let test_value_update = String::from("settings test value updated");
+    let test_description = String::from("settings test description");
+
+    let settings_inserted = service
+        .settings_service
+        .insert_settings(
+            test_key.clone(),
+            test_value.clone(),
+            test_description.clone(),
+        )
+        .await;
+
+    assert!(settings_inserted.is_ok());
+
+    let result_settings = service
+        .settings_service
+        .find_settings_by_key(test_key.as_str())
+        .await;
+
+    assert!(result_settings.is_ok());
+
+    let result_settings = result_settings.unwrap();
+    assert!(result_settings.key == test_key);
+    assert!(result_settings.value == test_value.clone());
+    assert!(result_settings.description.unwrap() == test_description);
+
+    let result = service
+        .settings_service
+        .update_settings(test_key.clone(), test_value_update.clone())
+        .await;
+
+    assert!(result.is_ok());
+
+    let updated_result_settings = service
+        .settings_service
+        .find_settings_by_key(test_key.as_str())
+        .await;
+    assert!(updated_result_settings.is_ok());
+
+    let updated_result_settings = updated_result_settings.unwrap();
+
+    assert!(updated_result_settings.key == test_key);
+    assert!(updated_result_settings.value == test_value_update);
+
+    let deleted_settings = service
+        .settings_service
+        .delete_settings(test_key.clone())
+        .await;
+
+    assert!(deleted_settings.is_ok());
+
+    let result = service
+        .settings_service
+        .find_settings_by_key(test_key.as_str())
+        .await;
+    assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn test_register_and_login() {
+    let service = helper_service();
 
     // Create registration request
     let req = RegisterRequest {
@@ -308,26 +477,7 @@ async fn test_register_and_login() {
 
 #[tokio::test]
 async fn test_duplicate_registration() {
-    let (group_store, user_groups_store) = create_stores();
-    let user_repo = Arc::new(MockRepo::new(
-        Arc::clone(&group_store),
-        Arc::clone(&user_groups_store),
-    ));
-    let group_repo = Arc::new(MockGroupRepository::new(
-        Arc::clone(&group_store),
-        Arc::clone(&user_groups_store),
-    ));
-    let password_reset_repo = Arc::new(MockPasswordResetRepository);
-    let jwt_service = Arc::new(keyrunes::services::jwt_service::JwtService::new(
-        "test_secret",
-    ));
-
-    let service = UserService::new(
-        user_repo.clone(),
-        group_repo,
-        password_reset_repo,
-        jwt_service,
-    );
+    let service = helper_service();
 
     let req = RegisterRequest {
         email: "duplicate@example.com".to_string(),
@@ -352,21 +502,7 @@ async fn test_duplicate_registration() {
 
 #[tokio::test]
 async fn test_password_validation() {
-    let (group_store, user_groups_store) = create_stores();
-    let user_repo = Arc::new(MockRepo::new(
-        Arc::clone(&group_store),
-        Arc::clone(&user_groups_store),
-    ));
-    let group_repo = Arc::new(MockGroupRepository::new(
-        Arc::clone(&group_store),
-        Arc::clone(&user_groups_store),
-    ));
-    let password_reset_repo = Arc::new(MockPasswordResetRepository);
-    let jwt_service = Arc::new(keyrunes::services::jwt_service::JwtService::new(
-        "test_secret",
-    ));
-
-    let service = UserService::new(user_repo, group_repo, password_reset_repo, jwt_service);
+    let service = helper_service();
 
     // Test password too short
     let req = RegisterRequest {
@@ -383,21 +519,7 @@ async fn test_password_validation() {
 
 #[tokio::test]
 async fn test_email_validation() {
-    let (group_store, user_groups_store) = create_stores();
-    let user_repo = Arc::new(MockRepo::new(
-        Arc::clone(&group_store),
-        Arc::clone(&user_groups_store),
-    ));
-    let group_repo = Arc::new(MockGroupRepository::new(
-        Arc::clone(&group_store),
-        Arc::clone(&user_groups_store),
-    ));
-    let password_reset_repo = Arc::new(MockPasswordResetRepository);
-    let jwt_service = Arc::new(keyrunes::services::jwt_service::JwtService::new(
-        "test_secret",
-    ));
-
-    let service = UserService::new(user_repo, group_repo, password_reset_repo, jwt_service);
+    let service = helper_service();
 
     // Test invalid email
     let req = RegisterRequest {
@@ -414,26 +536,7 @@ async fn test_email_validation() {
 
 #[tokio::test]
 async fn test_change_password() {
-    let (group_store, user_groups_store) = create_stores();
-    let user_repo = Arc::new(MockRepo::new(
-        Arc::clone(&group_store),
-        Arc::clone(&user_groups_store),
-    ));
-    let group_repo = Arc::new(MockGroupRepository::new(
-        Arc::clone(&group_store),
-        Arc::clone(&user_groups_store),
-    ));
-    let password_reset_repo = Arc::new(MockPasswordResetRepository);
-    let jwt_service = Arc::new(keyrunes::services::jwt_service::JwtService::new(
-        "test_secret",
-    ));
-
-    let service = UserService::new(
-        user_repo.clone(),
-        group_repo,
-        password_reset_repo,
-        jwt_service,
-    );
+    let service = helper_service();
 
     // Register a user
     let req = RegisterRequest {
@@ -480,23 +583,27 @@ async fn admin_create_user_with_groups() {
         Arc::clone(&group_store),
         Arc::clone(&user_groups_store),
     ));
-    let group_repo = Arc::new(MockGroupRepository::new(
-        Arc::clone(&group_store),
-        Arc::clone(&user_groups_store),
-    ));
     let password_reset_repo = Arc::new(MockPasswordResetRepository);
     let jwt_service = Arc::new(keyrunes::services::jwt_service::JwtService::new(
         "test_secret",
     ));
 
+    let settings_repo = Arc::new(MockSettingsRepository::new());
+    let settings_service = Arc::new(SettingsService::new(settings_repo));
+
+    let group_repo = Arc::new(MockGroupRepository::new(
+        Arc::clone(&group_store),
+        Arc::clone(&user_groups_store),
+    ));
     let service = UserService::new(
-        user_repo.clone(),
+        user_repo,
         group_repo.clone(),
         password_reset_repo,
         jwt_service,
+        settings_service,
     );
 
-    let group_service = GroupService::new(group_repo);
+    let group_service = GroupService::new(group_repo.clone());
 
     // Register superadmin
     let superadmin = service
