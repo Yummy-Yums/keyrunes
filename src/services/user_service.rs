@@ -465,7 +465,12 @@ impl<S: SettingsRepository> SettingsService<S> {
         Ok(record.unwrap())
     }
 
-    pub async fn insert_settings(&self, key: String, value: String) -> Result<()> {
+    pub async fn insert_settings(
+        &self,
+        key: String,
+        value: String,
+        description: String,
+    ) -> Result<()> {
         let record = self.settings_repo.get_settings_by_key(key.as_str()).await?;
 
         if record.is_some() {
@@ -476,7 +481,7 @@ impl<S: SettingsRepository> SettingsService<S> {
             .create_settings(CreateSettings {
                 key,
                 value,
-                description: None,
+                description: Some(description),
             })
             .await?;
 
