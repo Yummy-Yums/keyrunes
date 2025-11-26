@@ -27,8 +27,10 @@ RUN cargo build --release && rm -rf src
 COPY src ./src
 COPY migrations ./migrations
 COPY templates ./templates
+COPY static ./static
 
 # Build the application
+ENV SQLX_OFFLINE=false
 RUN cargo build --release
 
 # Runtime stage
@@ -39,6 +41,7 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     libpq5 \
     libssl3 \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Create app user
@@ -50,14 +53,13 @@ WORKDIR /app
 # Copy binary from builder stage
 COPY --from=builder /app/target/release/keyrunes /usr/local/bin/keyrunes
 COPY --from=builder /app/target/release/cli /usr/local/bin/keyrunes-cli
+COPY --from=builder /app/static ./static
 
 # Copy runtime files
 COPY --from=builder /app/migrations ./migrations
 COPY --from=builder /app/templates ./templates
 
-# Create directories
-RUN mkdir -p /app/static && \
-    chown -R keyrunes:keyrunes /app
+RUN chown -R keyrunes:keyrunes /app
 
 # Switch to app user
 USER keyrunes

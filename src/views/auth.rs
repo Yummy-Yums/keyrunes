@@ -217,6 +217,21 @@ pub async fn dashboard_page(
     }
 }
 
+/// GET /forgot-password
+pub async fn forgot_password_page(Extension(tmpl): Extension<tera::Tera>) -> impl IntoResponse {
+    let mut ctx = Context::new();
+    ctx.insert("title", "Forgot Password");
+
+    match tmpl.render("forgot_password.html", &ctx) {
+        Ok(body) => Html(body).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Template error: {}", e),
+        )
+            .into_response(),
+    }
+}
+
 /// GET /reset-password?forgot_password=TOKEN
 pub async fn reset_password_page(
     Extension(tmpl): Extension<tera::Tera>,

@@ -3,6 +3,7 @@ use crate::repository::{
     CreateSettings, GroupRepository, NewPasswordResetToken, NewUser, PasswordResetRepository,
     Settings, SettingsRepository, User, UserRepository,
 };
+use crate::services::email_service::EmailService;
 use crate::services::jwt_service::JwtService;
 use anyhow::{Result, anyhow};
 use argon2::{
@@ -308,6 +309,23 @@ impl<U: UserRepository, G: GroupRepository, P: PasswordResetRepository, S: Setti
         self.password_reset_repo
             .create_reset_token(reset_token)
             .await?;
+        if let Some(email_service) = &self.email_service {
+            match email_service
+                .send_password_reset_email(&req.email, &token)
+                .await
+            {
+                Ok(_) => {
+                    tracing::info!("Password reset email sent to {}", req.email);
+                }
+                Err(e) => {
+                    tracing::error!("Failed to send password reset email: {}", e);
+                }
+            }
+        } else {
+            tracing::warn!(
+                "Email service not configured, password reset token generated but email not sent"
+            );
+        }
 
         Ok(token)
     }

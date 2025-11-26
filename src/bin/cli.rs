@@ -75,11 +75,17 @@ async fn main() -> anyhow::Result<()> {
         .unwrap_or_else(|_| "postgres://postgres:password@localhost:5432/postgres".into());
 
     let pool = PgPool::connect(&database_url).await?;
+
     let user_repo = Arc::new(PgUserRepository::new(pool.clone()));
     let group_repo = Arc::new(PgGroupRepository::new(pool.clone()));
     let password_reset_repo = Arc::new(PgPasswordResetRepository::new(pool.clone()));
+
     let jwt_secret = std::env::var("JWT_SECRET")
         .unwrap_or_else(|_| "your-super-secret-jwt-key-change-in-production".into());
+
+    // Load templates
+    let tera = Arc::new(Tera::new("templates/**/*").expect("Failed to load templates"));
+
     let jwt_service = Arc::new(JwtService::new(&jwt_secret));
     let settings_repo = Arc::new(PgSettingsRepository::new(pool.clone()));
     let settings_service = Arc::new(SettingsService::new(settings_repo));
@@ -87,7 +93,7 @@ async fn main() -> anyhow::Result<()> {
     let service = Arc::new(UserService::new(
         user_repo,
         group_repo,
-        password_reset_repo,
+        password_reset_repo.clone(),
         jwt_service.clone(),
         settings_service,
     ));

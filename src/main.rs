@@ -26,7 +26,7 @@ use crate::handler::logging::{LogLevel, init_logging, request_logging_middleware
 use crate::repository::sqlx_impl::PgSettingsRepository;
 use crate::services::user_service::SettingsService;
 use repository::sqlx_impl::{PgGroupRepository, PgPasswordResetRepository, PgUserRepository};
-use services::{jwt_service::JwtService, user_service::UserService};
+use services::{email_service::EmailService, jwt_service::JwtService, user_service::UserService};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -80,6 +80,21 @@ async fn main() -> anyhow::Result<()> {
     let settings_repo = Arc::new(PgSettingsRepository::new(pool.clone()));
     let settings_service = Arc::new(SettingsService::new(settings_repo));
 
+    // Initialize email service (optional)
+    let email_service = match EmailService::from_env(tera.clone()) {
+        Ok(service) => {
+            tracing::info!("✅ Email service configured");
+            Some(Arc::new(service))
+        }
+        Err(e) => {
+            tracing::warn!(
+                "⚠️  Email service not configured: {}. Password reset tokens will be generated but emails won't be sent.",
+                e
+            );
+            None
+        }
+    };
+
     // Initialize user service
     let user_service = Arc::new(UserService::new(
         user_repo,
@@ -109,7 +124,10 @@ async fn main() -> anyhow::Result<()> {
             "/login",
             get(views::auth::login_page).post(views::auth::login_post),
         )
-        .route("/reset-password", get(api::auth::reset_password_page))
+        .route("/forgot-password", get(views::auth::forgot_password_page))
+        .route("/api/forgot-password", post(api::auth::forgot_password_api))
+        .route("/reset-password", get(views::auth::reset_password_page))
+        .route("/api/reset-password", post(api::auth::reset_password_api))
         .nest_service("/static", ServeDir::new("./static"));
 
     // Protected routes - authentication required
@@ -134,7 +152,7 @@ async fn main() -> anyhow::Result<()> {
         .merge(public_router)
         .merge(protected_router)
         .fallback(handler_404)
-        .layer(Extension(tera))
+        .layer(Extension((*tera).clone()))
         .layer(Extension(user_service))
         .layer(Extension(jwt_service))
         .layer(Extension(pool))
@@ -144,10 +162,10 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("🛡️ KeyRunes server starting on http://127.0.0.1:3000");
     tracing::info!("📚 Available endpoints:");
     tracing::info!("  • Health: /api/health, /api/health/ready, /api/health/live");
-    tracing::info!("  • Public: /login, /register, /reset-password");
+    tracing::info!("  • Public: /login, /register, /forgot-password, /reset-password");
     tracing::info!("  • Protected: /dashboard, /change-password");
     tracing::info!(
-        "  • API: /api/login, /api/register, /api/me, /api/refresh-token, /api/admin/user"
+        "  • API: /api/login, /api/register, /api/forgot-password, /api/reset-password, /api/me, /api/refresh-token, /api/admin/user"
     );
 
     axum::serve(listener, app).await.unwrap();

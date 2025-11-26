@@ -477,7 +477,26 @@ async fn test_register_and_login() {
 
 #[tokio::test]
 async fn test_duplicate_registration() {
-    let service = helper_service();
+    let (group_store, user_groups_store) = create_stores();
+    let user_repo = Arc::new(MockRepo::new(
+        Arc::clone(&group_store),
+        Arc::clone(&user_groups_store),
+    ));
+    let group_repo = Arc::new(MockGroupRepository::new(
+        Arc::clone(&group_store),
+        Arc::clone(&user_groups_store),
+    ));
+    let password_reset_repo = Arc::new(MockPasswordResetRepository);
+    let jwt_service = Arc::new(keyrunes::services::jwt_service::JwtService::new(
+        "test_secret",
+    ));
+
+    let service = UserService::new(
+        user_repo.clone(),
+        group_repo,
+        password_reset_repo,
+        jwt_service,
+    );
 
     let req = RegisterRequest {
         email: "duplicate@example.com".to_string(),
@@ -502,7 +521,21 @@ async fn test_duplicate_registration() {
 
 #[tokio::test]
 async fn test_password_validation() {
-    let service = helper_service();
+    let (group_store, user_groups_store) = create_stores();
+    let user_repo = Arc::new(MockRepo::new(
+        Arc::clone(&group_store),
+        Arc::clone(&user_groups_store),
+    ));
+    let group_repo = Arc::new(MockGroupRepository::new(
+        Arc::clone(&group_store),
+        Arc::clone(&user_groups_store),
+    ));
+    let password_reset_repo = Arc::new(MockPasswordResetRepository);
+    let jwt_service = Arc::new(keyrunes::services::jwt_service::JwtService::new(
+        "test_secret",
+    ));
+
+    let service = UserService::new(user_repo, group_repo, password_reset_repo, jwt_service);
 
     // Test password too short
     let req = RegisterRequest {
@@ -519,7 +552,21 @@ async fn test_password_validation() {
 
 #[tokio::test]
 async fn test_email_validation() {
-    let service = helper_service();
+    let (group_store, user_groups_store) = create_stores();
+    let user_repo = Arc::new(MockRepo::new(
+        Arc::clone(&group_store),
+        Arc::clone(&user_groups_store),
+    ));
+    let group_repo = Arc::new(MockGroupRepository::new(
+        Arc::clone(&group_store),
+        Arc::clone(&user_groups_store),
+    ));
+    let password_reset_repo = Arc::new(MockPasswordResetRepository);
+    let jwt_service = Arc::new(keyrunes::services::jwt_service::JwtService::new(
+        "test_secret",
+    ));
+
+    let service = UserService::new(user_repo, group_repo, password_reset_repo, jwt_service);
 
     // Test invalid email
     let req = RegisterRequest {
@@ -536,7 +583,26 @@ async fn test_email_validation() {
 
 #[tokio::test]
 async fn test_change_password() {
-    let service = helper_service();
+    let (group_store, user_groups_store) = create_stores();
+    let user_repo = Arc::new(MockRepo::new(
+        Arc::clone(&group_store),
+        Arc::clone(&user_groups_store),
+    ));
+    let group_repo = Arc::new(MockGroupRepository::new(
+        Arc::clone(&group_store),
+        Arc::clone(&user_groups_store),
+    ));
+    let password_reset_repo = Arc::new(MockPasswordResetRepository);
+    let jwt_service = Arc::new(keyrunes::services::jwt_service::JwtService::new(
+        "test_secret",
+    ));
+
+    let service = UserService::new(
+        user_repo.clone(),
+        group_repo,
+        password_reset_repo,
+        jwt_service,
+    );
 
     // Register a user
     let req = RegisterRequest {
