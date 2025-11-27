@@ -364,6 +364,7 @@ fn helper_service() -> UserServiceType {
         password_reset_repo,
         jwt_service,
         settings_service,
+        None,
     );
 
     service
@@ -490,12 +491,16 @@ async fn test_duplicate_registration() {
     let jwt_service = Arc::new(keyrunes::services::jwt_service::JwtService::new(
         "test_secret",
     ));
+    let settings_repo = Arc::new(MockSettingsRepository::new());
+    let settings_service = Arc::new(SettingsService::new(settings_repo));
 
     let service = UserService::new(
         user_repo.clone(),
         group_repo,
         password_reset_repo,
         jwt_service,
+        settings_service,
+        None,
     );
 
     let req = RegisterRequest {
@@ -534,8 +539,17 @@ async fn test_password_validation() {
     let jwt_service = Arc::new(keyrunes::services::jwt_service::JwtService::new(
         "test_secret",
     ));
+    let settings_repo = Arc::new(MockSettingsRepository::new());
+    let settings_service = Arc::new(SettingsService::new(settings_repo));
 
-    let service = UserService::new(user_repo, group_repo, password_reset_repo, jwt_service);
+    let service = UserService::new(
+        user_repo,
+        group_repo,
+        password_reset_repo,
+        jwt_service,
+        settings_service,
+        None,
+    );
 
     // Test password too short
     let req = RegisterRequest {
@@ -565,8 +579,17 @@ async fn test_email_validation() {
     let jwt_service = Arc::new(keyrunes::services::jwt_service::JwtService::new(
         "test_secret",
     ));
+    let settings_repo = Arc::new(MockSettingsRepository::new());
+    let settings_service = Arc::new(SettingsService::new(settings_repo));
 
-    let service = UserService::new(user_repo, group_repo, password_reset_repo, jwt_service);
+    let service = UserService::new(
+        user_repo,
+        group_repo,
+        password_reset_repo,
+        jwt_service,
+        settings_service,
+        None,
+    );
 
     // Test invalid email
     let req = RegisterRequest {
@@ -596,12 +619,16 @@ async fn test_change_password() {
     let jwt_service = Arc::new(keyrunes::services::jwt_service::JwtService::new(
         "test_secret",
     ));
+    let settings_repo = Arc::new(MockSettingsRepository::new());
+    let settings_service = Arc::new(SettingsService::new(settings_repo));
 
     let service = UserService::new(
         user_repo.clone(),
         group_repo,
         password_reset_repo,
         jwt_service,
+        settings_service,
+        None,
     );
 
     // Register a user
@@ -667,6 +694,7 @@ async fn admin_create_user_with_groups() {
         password_reset_repo,
         jwt_service,
         settings_service,
+        None,
     );
 
     let group_service = GroupService::new(group_repo.clone());

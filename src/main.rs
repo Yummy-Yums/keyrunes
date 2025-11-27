@@ -106,6 +106,7 @@ async fn main() -> anyhow::Result<()> {
         password_reset_repo,
         jwt_service.clone(),
         settings_service,
+        email_service,
     ));
 
     // Public routes - no authentication required
@@ -204,6 +205,7 @@ mod tests {
             password_reset_repo,
             jwt_service.clone(),
             settings_service.clone(),
+            None,
         ));
 
         let tera = Tera::new("templates/**/*").expect("Error loading templates");

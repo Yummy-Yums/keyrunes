@@ -95,6 +95,7 @@ pub struct UserService<
     pub password_reset_repo: Arc<P>,
     pub jwt_service: Arc<JwtService>,
     pub settings_service: Arc<SettingsService<S>>,
+    pub email_service: Option<Arc<EmailService>>,
 }
 
 impl<U: UserRepository, G: GroupRepository, P: PasswordResetRepository, S: SettingsRepository>
@@ -106,6 +107,7 @@ impl<U: UserRepository, G: GroupRepository, P: PasswordResetRepository, S: Setti
         password_reset_repo: Arc<P>,
         jwt_service: Arc<JwtService>,
         settings_service: Arc<SettingsService<S>>,
+        email_service: Option<Arc<EmailService>>,
     ) -> Self {
         Self {
             user_repo,
@@ -113,6 +115,7 @@ impl<U: UserRepository, G: GroupRepository, P: PasswordResetRepository, S: Setti
             password_reset_repo,
             jwt_service,
             settings_service,
+            email_service,
         }
     }
 
