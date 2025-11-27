@@ -1,6 +1,6 @@
 use axum::{Json, extract::Extension, http::StatusCode, response::IntoResponse};
 use chrono::Utc;
-use serde::{Deserialize, Serialize};
+use serde::{Serialize};
 use sqlx::{PgPool, Row};
 use std::time::SystemTime;
 
@@ -187,8 +187,7 @@ pub fn test_password_hashing() -> Result<(), Box<dyn std::error::Error>> {
     let hash = match argon2.hash_password(password.as_bytes(), &salt) {
         Ok(h) => h,
         Err(e) => {
-            return Err(Box::new(io::Error::new(
-                io::ErrorKind::Other,
+            return Err(Box::new(io::Error::other(
                 format!("password hash error: {}", e),
             )));
         }
@@ -198,16 +197,14 @@ pub fn test_password_hashing() -> Result<(), Box<dyn std::error::Error>> {
     let parsed_hash = match PasswordHash::new(&hash_string) {
         Ok(p) => p,
         Err(e) => {
-            return Err(Box::new(io::Error::new(
-                io::ErrorKind::Other,
+            return Err(Box::new(io::Error::other(
                 format!("password hash parse error: {}", e),
             )));
         }
     };
 
     if let Err(e) = argon2.verify_password(password.as_bytes(), &parsed_hash) {
-        return Err(Box::new(io::Error::new(
-            io::ErrorKind::Other,
+        return Err(Box::new(io::Error::other(
             format!("password verify error: {}", e),
         )));
     }

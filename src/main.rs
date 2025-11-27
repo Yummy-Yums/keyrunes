@@ -80,8 +80,12 @@ async fn main() -> anyhow::Result<()> {
     let settings_repo = Arc::new(PgSettingsRepository::new(pool.clone()));
     let settings_service = Arc::new(SettingsService::new(settings_repo));
 
+    tracing::info!("📄 Loading templates...");
+    let tera = Tera::new("templates/**/*").expect("Error to load templates");
+    tracing::info!("✅ Templates loaded with success");
+
     // Initialize email service (optional)
-    let email_service = match EmailService::from_env(tera.clone()) {
+    let email_service = match EmailService::from_env(tera.clone().into()) {
         Ok(service) => {
             tracing::info!("✅ Email service configured");
             Some(Arc::new(service))
@@ -103,10 +107,6 @@ async fn main() -> anyhow::Result<()> {
         jwt_service.clone(),
         settings_service,
     ));
-
-    tracing::info!("📄 Loading templates...");
-    let tera = Tera::new("templates/**/*").expect("Error to load templates");
-    tracing::info!("✅ Templates loaded with success");
 
     // Public routes - no authentication required
     let public_router = Router::new()
@@ -152,7 +152,7 @@ async fn main() -> anyhow::Result<()> {
         .merge(public_router)
         .merge(protected_router)
         .fallback(handler_404)
-        .layer(Extension((*tera).clone()))
+        .layer(Extension(tera))
         .layer(Extension(user_service))
         .layer(Extension(jwt_service))
         .layer(Extension(pool))

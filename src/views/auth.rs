@@ -256,17 +256,12 @@ pub async fn reset_password_page(
 /// FIXED: Properly handles cookie parsing without panicking
 fn extract_bearer_token_from_cookie_or_header(headers: &HeaderMap) -> Option<String> {
     // First try Authorization header
-    if let Some(auth_header) = headers.get("authorization") {
-        if let Ok(auth_str) = auth_header.to_str() {
-            if auth_str.starts_with("Bearer ") && auth_str.len() > 7 {
+    if let Some(auth_header) = headers.get("authorization") && let Ok(auth_str) = auth_header.to_str() && auth_str.starts_with("Bearer ") && auth_str.len() > 7 {
                 return Some(auth_str[7..].to_string());
             }
-        }
-    }
 
     // Then try cookies
-    if let Some(cookie_header) = headers.get("cookie") {
-        if let Ok(cookie_str) = cookie_header.to_str() {
+    if let Some(cookie_header) = headers.get("cookie") && let Ok(cookie_str) = cookie_header.to_str() {
             // Parse cookies safely
             for cookie in cookie_str.split(';') {
                 let cookie = cookie.trim();
@@ -279,7 +274,6 @@ fn extract_bearer_token_from_cookie_or_header(headers: &HeaderMap) -> Option<Str
                     }
                 }
             }
-        }
     }
 
     None

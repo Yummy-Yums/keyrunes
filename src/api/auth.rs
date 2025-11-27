@@ -196,6 +196,7 @@ pub async fn forgot_password_api(
 }
 
 /// GET /reset-password?forgot_password=TOKEN - Display reset password form
+#[allow(dead_code)]
 pub async fn reset_password_page(
     Extension(tmpl): Extension<tera::Tera>,
     Query(params): Query<ResetPasswordQuery>,
@@ -239,11 +240,9 @@ fn extract_bearer_token(headers: &HeaderMap) -> Option<String> {
     let auth_header = headers.get("authorization")?;
     let auth_str = auth_header.to_str().ok()?;
 
-    if auth_str.starts_with("Bearer ") {
-        Some(auth_str[7..].to_string())
-    } else {
-        None
-    }
+    auth_str
+        .strip_prefix("Bearer ")
+        .map(|s| s.to_string())
 }
 
 #[cfg(test)]

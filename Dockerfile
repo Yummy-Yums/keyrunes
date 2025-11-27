@@ -27,10 +27,10 @@ RUN cargo build --release && rm -rf src
 COPY src ./src
 COPY migrations ./migrations
 COPY templates ./templates
-COPY static ./static
+COPY .sqlx ./.sqlx
 
 # Build the application
-ENV SQLX_OFFLINE=false
+ENV SQLX_OFFLINE=true
 RUN cargo build --release
 
 # Runtime stage
@@ -53,7 +53,6 @@ WORKDIR /app
 # Copy binary from builder stage
 COPY --from=builder /app/target/release/keyrunes /usr/local/bin/keyrunes
 COPY --from=builder /app/target/release/cli /usr/local/bin/keyrunes-cli
-COPY --from=builder /app/static ./static
 
 # Copy runtime files
 COPY --from=builder /app/migrations ./migrations

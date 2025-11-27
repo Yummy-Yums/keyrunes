@@ -364,10 +364,12 @@ impl GroupRepository for PgGroupRepository {
     }
 }
 
+#[allow(dead_code)]
 pub struct PgPolicyRepository {
     pub pool: PgPool,
 }
 
+#[allow(dead_code)]
 impl PgPolicyRepository {
     pub fn new(pool: PgPool) -> Self {
         Self { pool }

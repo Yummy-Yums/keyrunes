@@ -25,8 +25,10 @@ type UserServiceType = UserService<
     PgSettingsRepository,
 >;
 type GroupServiceType = GroupService<PgGroupRepository>;
+#[allow(dead_code)]
 type PolicyServiceType = PolicyService<PgPolicyRepository>;
 
+#[allow(dead_code)]
 #[derive(Serialize)]
 pub struct AdminDashboard {
     pub total_users: i64,
@@ -56,6 +58,7 @@ pub async fn create_user(
 }
 
 // GET /api/admin/dashboard
+#[allow(dead_code)]
 pub async fn admin_dashboard(
     Extension(user): Extension<AuthenticatedUser>,
     Extension(pool): Extension<sqlx::PgPool>,
@@ -100,6 +103,7 @@ pub async fn admin_dashboard(
 }
 
 // GET /api/admin/users
+#[allow(dead_code)]
 pub async fn list_users(
     Extension(user): Extension<AuthenticatedUser>,
     Extension(pool): Extension<sqlx::PgPool>,
@@ -133,7 +137,7 @@ pub async fn list_users(
                 "email": u.email,
                 "username": u.username,
                 "first_login": u.first_login,
-                "groups": u.groups.unwrap_or_else(|| vec![]),
+                "groups": u.groups.unwrap_or_default(),
                 "created_at": u.created_at
             })
         })
@@ -143,6 +147,7 @@ pub async fn list_users(
 }
 
 // GET /api/admin/groups
+#[allow(dead_code)]
 pub async fn list_groups(
     Extension(user): Extension<AuthenticatedUser>,
     Extension(pool): Extension<sqlx::PgPool>,
@@ -162,6 +167,7 @@ pub async fn list_groups(
 }
 
 // POST /api/admin/groups
+#[allow(dead_code)]
 pub async fn create_group(
     Extension(user): Extension<AuthenticatedUser>,
     Extension(pool): Extension<sqlx::PgPool>,
@@ -182,6 +188,7 @@ pub async fn create_group(
 }
 
 // GET /api/admin/policies
+#[allow(dead_code)]
 pub async fn list_policies(
     Extension(user): Extension<AuthenticatedUser>,
     Extension(pool): Extension<sqlx::PgPool>,
@@ -201,6 +208,7 @@ pub async fn list_policies(
 }
 
 // POST /api/admin/policies
+#[allow(dead_code)]
 pub async fn create_policy(
     Extension(user): Extension<AuthenticatedUser>,
     Extension(pool): Extension<sqlx::PgPool>,
@@ -221,6 +229,7 @@ pub async fn create_policy(
 }
 
 // POST /api/admin/users/:user_id/groups/:group_id
+#[allow(dead_code)]
 pub async fn assign_user_to_group(
     Extension(admin): Extension<AuthenticatedUser>,
     Extension(pool): Extension<sqlx::PgPool>,
@@ -250,6 +259,7 @@ pub async fn assign_user_to_group(
 }
 
 // DELETE /api/admin/users/:user_id/groups/:group_id
+#[allow(dead_code)]
 pub async fn remove_user_from_group(
     Extension(admin): Extension<AuthenticatedUser>,
     Extension(pool): Extension<sqlx::PgPool>,
@@ -281,7 +291,6 @@ pub async fn remove_user_from_group(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::repository::PolicyEffect;
 
     #[test]
     fn test_admin_dashboard_serialization() {

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM group_policies WHERE group_id = $1 AND policy_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a91c966bc66d1efec23e3a336fe515fa9149901b2882bbbd6eec5772d215927b"
+}

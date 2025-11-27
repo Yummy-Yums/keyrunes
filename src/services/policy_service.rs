@@ -5,6 +5,7 @@ use serde_json::Value as JsonValue;
 use std::sync::Arc;
 use uuid::Uuid;
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct CreatePolicyRequest {
     pub name: String,
@@ -15,6 +16,7 @@ pub struct CreatePolicyRequest {
     pub conditions: Option<JsonValue>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize)]
 pub struct PolicyResponse {
     pub policy_id: i64,
@@ -42,11 +44,13 @@ impl From<Policy> for PolicyResponse {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct PolicyService<P: PolicyRepository> {
     pub repo: Arc<P>,
 }
 
+#[allow(dead_code)]
 impl<P: PolicyRepository> PolicyService<P> {
     pub fn new(repo: Arc<P>) -> Self {
         Self { repo }

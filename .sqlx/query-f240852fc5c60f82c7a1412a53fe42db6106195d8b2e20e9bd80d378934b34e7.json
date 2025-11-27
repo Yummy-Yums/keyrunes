@@ -1,0 +1,82 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO policies (external_id, name, description, resource, action, effect, conditions) \n               VALUES ($1, $2, $3, $4, $5, $6, $7) \n               RETURNING policy_id, external_id, name, description, resource, action, \n               effect as \"effect_str\", conditions, created_at, updated_at",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "policy_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "external_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "resource",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "action",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "effect_str",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "conditions",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 8,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Varchar",
+        "Text",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Jsonb"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "f240852fc5c60f82c7a1412a53fe42db6106195d8b2e20e9bd80d378934b34e7"
+}

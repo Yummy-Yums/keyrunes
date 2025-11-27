@@ -11,6 +11,7 @@ pub struct ErrorResponse {
     pub status_code: u16,
 }
 
+#[allow(dead_code)]
 impl ErrorResponse {
     /// Create a new error response
     pub fn new(status: StatusCode, message: impl Into<String>) -> Self {
@@ -194,21 +195,25 @@ pub async fn handler_404(req: Request) -> impl IntoResponse {
 }
 
 /// Handler for 400 Bad Request errors
+#[allow(dead_code)]
 pub async fn handler_400() -> impl IntoResponse {
     ErrorResponse::bad_request("Bad request")
 }
 
 /// Handler for 401 Unauthorized errors
+#[allow(dead_code)]
 pub async fn handler_401() -> impl IntoResponse {
     ErrorResponse::unauthorized("Unauthorized - Authentication required")
 }
 
 /// Handler for 403 Forbidden errors
+#[allow(dead_code)]
 pub async fn handler_403() -> impl IntoResponse {
     ErrorResponse::forbidden("Forbidden - Insufficient permissions")
 }
 
 /// Handler for 500 Internal Server Error
+#[allow(dead_code)]
 pub async fn handler_500() -> impl IntoResponse {
     ErrorResponse::internal_server_error("Internal server error occurred")
 }

@@ -4,12 +4,14 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use uuid::Uuid;
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct CreateGroupRequest {
     pub name: String,
     pub description: Option<String>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize)]
 pub struct GroupResponse {
     pub group_id: i64,
@@ -19,6 +21,7 @@ pub struct GroupResponse {
     pub policies: Vec<PolicyResponse>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize)]
 pub struct PolicyResponse {
     pub policy_id: i64,
@@ -30,11 +33,13 @@ pub struct PolicyResponse {
     pub effect: String,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct GroupService<G: GroupRepository> {
     pub repo: Arc<G>,
 }
 
+#[allow(dead_code)]
 impl<G: GroupRepository> GroupService<G> {
     pub fn new(repo: Arc<G>) -> Self {
         Self { repo }
@@ -121,12 +126,11 @@ impl<G: GroupRepository> GroupService<G> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::repository::{Group, Policy, PolicyEffect};
+    use crate::repository::{Group, Policy};
     use anyhow::Result;
     use async_trait::async_trait;
-    use chrono::{DateTime, Utc};
+    use chrono::Utc;
     use std::sync::{Arc, Mutex};
-    use uuid::Uuid;
 
     struct MockGroupRepository {
         groups: Mutex<Vec<Group>>,

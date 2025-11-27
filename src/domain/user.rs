@@ -1,3 +1,5 @@
+use std::fmt;
+
 use regex::Regex;
 use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
@@ -23,13 +25,13 @@ impl<'de> Deserialize<'de> for Email {
         D: serde::Deserializer<'de>,
     {
         let email = String::deserialize(deserializer)?;
-        Ok(Self::try_from(email.as_str()).map_err(|e| serde::de::Error::custom(e.to_string()))?)
+        Self::try_from(email.as_str()).map_err(|e| serde::de::Error::custom(e.to_string()))
     }
 }
 
-impl ToString for Email {
-    fn to_string(&self) -> String {
-        self.0.to_owned()
+impl fmt::Display for Email {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
 
@@ -62,7 +64,8 @@ impl<'de> Deserialize<'de> for Password {
         let password = String::deserialize(deserializer)?;
 
         Ok(Self::try_from(password.as_str())
-            .map_err(|e| serde::de::Error::custom(e.to_string()))?)
+            .map_err(|e| serde::de::Error::custom(e.to_string())))?
+
     }
 }
 

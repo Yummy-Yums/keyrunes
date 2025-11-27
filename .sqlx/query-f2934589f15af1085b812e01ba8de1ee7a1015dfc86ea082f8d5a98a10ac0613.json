@@ -1,0 +1,76 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT policy_id, external_id, name, description, resource, action, \n               effect as \"effect_str\", conditions, created_at, updated_at \n               FROM policies WHERE policy_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "policy_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "external_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "resource",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "action",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "effect_str",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "conditions",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 8,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "f2934589f15af1085b812e01ba8de1ee7a1015dfc86ea082f8d5a98a10ac0613"
+}

@@ -90,12 +90,14 @@ impl EmailService {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
 
     fn create_test_tera() -> Arc<Tera> {
         Arc::new(Tera::new("templates/**/*").expect("Failed to load templates"))
     }
 
     #[test]
+    #[serial]
     fn test_email_service_from_env_missing_required() {
         let tera = create_test_tera();
 
@@ -110,6 +112,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_email_service_from_env_with_defaults() {
         let tera = create_test_tera();
 

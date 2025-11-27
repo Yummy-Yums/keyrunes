@@ -85,6 +85,7 @@ pub struct NewPolicy {
     pub conditions: Option<JsonValue>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserGroup {
     pub user_id: i64,
@@ -93,6 +94,7 @@ pub struct UserGroup {
     pub assigned_by: Option<i64>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserPolicy {
     pub user_id: i64,
@@ -101,6 +103,7 @@ pub struct UserPolicy {
     pub assigned_by: Option<i64>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GroupPolicy {
     pub group_id: i64,
@@ -144,6 +147,7 @@ pub struct CreateSettings {
 }
 
 // User Repository Trait
+#[allow(dead_code)]
 #[async_trait]
 pub trait UserRepository: Send + Sync + 'static {
     async fn find_by_email(&self, email: &str) -> Result<Option<User>>;

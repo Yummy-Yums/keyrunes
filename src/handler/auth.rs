@@ -12,6 +12,7 @@ use std::sync::Arc;
 use crate::handler::errors::ErrorResponse;
 use crate::services::jwt_service::{Claims, JwtService};
 
+#[allow(dead_code)]
 #[derive(Clone)]
 pub struct AuthenticatedUser {
     pub user_id: i64,
@@ -56,23 +57,23 @@ pub async fn require_auth(
 }
 
 /// Middleware that optionally extracts user from JWT if present
+#[allow(dead_code)]
 pub async fn optional_auth(
     Extension(jwt_service): Extension<Arc<JwtService>>,
     headers: HeaderMap,
     mut request: Request,
     next: Next,
 ) -> Response {
-    if let Some(token) = extract_bearer_token(&headers) {
-        if let Ok(claims) = jwt_service.verify_token(&token) {
+    if let Some(token) = extract_bearer_token(&headers) && let Ok(claims) = jwt_service.verify_token(&token) {
             let user = AuthenticatedUser::from(claims);
             request.extensions_mut().insert(user);
         }
-    }
 
     next.run(request).await
 }
 
 /// Middleware that requires specific groups
+#[allow(dead_code)]
 pub fn require_groups(
     required_groups: Vec<String>,
 ) -> impl Clone
@@ -119,17 +120,12 @@ pub async fn require_superadmin(
 /// FIXED: Safe cookie parsing using strip_prefix instead of direct indexing
 fn extract_bearer_token(headers: &HeaderMap) -> Option<String> {
     // First try Authorization header
-    if let Some(auth_header) = headers.get("authorization") {
-        if let Ok(auth_str) = auth_header.to_str() {
-            if auth_str.starts_with("Bearer ") && auth_str.len() > 7 {
+    if let Some(auth_header) = headers.get("authorization") && let Ok(auth_str) = auth_header.to_str() && auth_str.starts_with("Bearer ") && auth_str.len() > 7 {
                 return Some(auth_str[7..].to_string());
             }
-        }
-    }
 
     // Then try cookies - SAFE PARSING
-    if let Some(cookie_header) = headers.get("cookie") {
-        if let Ok(cookie_str) = cookie_header.to_str() {
+    if let Some(cookie_header) = headers.get("cookie") && let Ok(cookie_str) = cookie_header.to_str() {
             for cookie in cookie_str.split(';') {
                 let cookie = cookie.trim();
 
@@ -142,7 +138,6 @@ fn extract_bearer_token(headers: &HeaderMap) -> Option<String> {
                 }
             }
         }
-    }
 
     None
 }

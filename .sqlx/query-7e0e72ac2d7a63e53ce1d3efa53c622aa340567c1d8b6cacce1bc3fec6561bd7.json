@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM user_policies WHERE user_id = $1 AND policy_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7e0e72ac2d7a63e53ce1d3efa53c622aa340567c1d8b6cacce1bc3fec6561bd7"
+}

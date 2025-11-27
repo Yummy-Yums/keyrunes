@@ -43,6 +43,8 @@ pub struct CreateUserRequest {
     pub first_login: bool,
 }
 
+
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct RegisterRequest {
     pub email: String,
@@ -139,7 +141,7 @@ impl<U: UserRepository, G: GroupRepository, P: PasswordResetRepository, S: Setti
         }
 
         let group_ids = self
-            .resolve_group_ids(req.groups.unwrap_or(Vec::new()).clone())
+            .resolve_group_ids(req.groups.unwrap_or_default())
             .await?;
 
         // Hash password
@@ -436,13 +438,14 @@ impl<U: UserRepository, G: GroupRepository, P: PasswordResetRepository, S: Setti
         hex::encode(token_bytes)
     }
 
+    #[allow(dead_code)]
     pub async fn cleanup_expired_tokens(&self) -> Result<()> {
         self.password_reset_repo.cleanup_expired_tokens().await
     }
 
     async fn resolve_group_ids(&self, mut groups: Vec<String>) -> Result<Vec<i64>> {
         // check if group is empty, if so assign user to `users` group by default
-        if groups.len() == 0 {
+        if groups.is_empty() {
             groups.push("users".to_string());
         }
 
