@@ -94,6 +94,7 @@ pub struct UserService<
     pub group_repo: Arc<G>,
     pub password_reset_repo: Arc<P>,
     pub jwt_service: Arc<JwtService>,
+    #[allow(dead_code)]
     pub settings_service: Arc<SettingsService<S>>,
     pub email_service: Option<Arc<EmailService>>,
 }
@@ -363,6 +364,7 @@ impl<U: UserRepository, G: GroupRepository, P: PasswordResetRepository, S: Setti
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub async fn update_password(&self, req: AdminChangePasswordRequest) -> Result<()> {
         // Validate new password
         if req.new_password.len() < 8 {
@@ -380,17 +382,19 @@ impl<U: UserRepository, G: GroupRepository, P: PasswordResetRepository, S: Setti
         Ok(())
     }
 
-    pub async fn find_user_by_username(&self, username: &String) -> Option<User> {
+    #[allow(dead_code)]
+    pub async fn find_user_by_username(&self, username: &str) -> Option<User> {
         let user: Option<User> = self
             .user_repo
-            .find_by_username(username.as_str())
+            .find_by_username(username)
             .await
             .unwrap();
         user
     }
 
-    pub async fn find_user_by_email(&self, email: &String) -> Option<User> {
-        let user: Option<User> = self.user_repo.find_by_email(email.as_str()).await.unwrap();
+    #[allow(dead_code)]
+    pub async fn find_user_by_email(&self, email: &str) -> Option<User> {
+        let user: Option<User> = self.user_repo.find_by_email(email).await.unwrap();
         user
     }
 
@@ -466,10 +470,12 @@ impl<U: UserRepository, G: GroupRepository, P: PasswordResetRepository, S: Setti
     }
 }
 
+#[allow(dead_code)]
 pub struct SettingsService<S: SettingsRepository> {
     settings_repo: Arc<S>,
 }
 
+#[allow(dead_code)]
 impl<S: SettingsRepository> SettingsService<S> {
     pub fn new(settings_repo: Arc<S>) -> Self {
         Self { settings_repo }

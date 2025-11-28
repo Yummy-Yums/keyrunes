@@ -130,6 +130,7 @@ pub struct NewPasswordResetToken {
 }
 
 #[derive(sqlx::FromRow, Debug, Clone)]
+#[allow(dead_code)]
 pub struct Settings {
     pub settings_id: i32,
     pub key: String,

@@ -135,6 +135,7 @@ pub async fn me_api(
 }
 
 /// POST /api/change-password
+#[allow(dead_code)]
 pub async fn change_password_api(
     Extension(service): Extension<Arc<UserServiceType>>,
     headers: HeaderMap,

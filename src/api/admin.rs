@@ -6,6 +6,7 @@ use axum::{
 };
 use serde::Serialize;
 use std::sync::Arc;
+use crate::repository::UserRepository;
 
 use crate::repository::sqlx_impl::{
     PgGroupRepository, PgPasswordResetRepository, PgPolicyRepository, PgSettingsRepository,
@@ -24,11 +25,11 @@ type UserServiceType = UserService<
     PgPasswordResetRepository,
     PgSettingsRepository,
 >;
+#[allow(dead_code)]
 type GroupServiceType = GroupService<PgGroupRepository>;
 #[allow(dead_code)]
 type PolicyServiceType = PolicyService<PgPolicyRepository>;
 
-#[allow(dead_code)]
 #[derive(Serialize)]
 pub struct AdminDashboard {
     pub total_users: i64,
@@ -58,7 +59,6 @@ pub async fn create_user(
 }
 
 // GET /api/admin/dashboard
-#[allow(dead_code)]
 pub async fn admin_dashboard(
     Extension(user): Extension<AuthenticatedUser>,
     Extension(pool): Extension<sqlx::PgPool>,
@@ -103,7 +103,6 @@ pub async fn admin_dashboard(
 }
 
 // GET /api/admin/users
-#[allow(dead_code)]
 pub async fn list_users(
     Extension(user): Extension<AuthenticatedUser>,
     Extension(pool): Extension<sqlx::PgPool>,
@@ -147,7 +146,6 @@ pub async fn list_users(
 }
 
 // GET /api/admin/groups
-#[allow(dead_code)]
 pub async fn list_groups(
     Extension(user): Extension<AuthenticatedUser>,
     Extension(pool): Extension<sqlx::PgPool>,
@@ -167,7 +165,6 @@ pub async fn list_groups(
 }
 
 // POST /api/admin/groups
-#[allow(dead_code)]
 pub async fn create_group(
     Extension(user): Extension<AuthenticatedUser>,
     Extension(pool): Extension<sqlx::PgPool>,
@@ -188,7 +185,6 @@ pub async fn create_group(
 }
 
 // GET /api/admin/policies
-#[allow(dead_code)]
 pub async fn list_policies(
     Extension(user): Extension<AuthenticatedUser>,
     Extension(pool): Extension<sqlx::PgPool>,
@@ -208,7 +204,6 @@ pub async fn list_policies(
 }
 
 // POST /api/admin/policies
-#[allow(dead_code)]
 pub async fn create_policy(
     Extension(user): Extension<AuthenticatedUser>,
     Extension(pool): Extension<sqlx::PgPool>,
@@ -229,7 +224,6 @@ pub async fn create_policy(
 }
 
 // POST /api/admin/users/:user_id/groups/:group_id
-#[allow(dead_code)]
 pub async fn assign_user_to_group(
     Extension(admin): Extension<AuthenticatedUser>,
     Extension(pool): Extension<sqlx::PgPool>,
@@ -259,7 +253,6 @@ pub async fn assign_user_to_group(
 }
 
 // DELETE /api/admin/users/:user_id/groups/:group_id
-#[allow(dead_code)]
 pub async fn remove_user_from_group(
     Extension(admin): Extension<AuthenticatedUser>,
     Extension(pool): Extension<sqlx::PgPool>,
@@ -286,6 +279,50 @@ pub async fn remove_user_from_group(
             .into_response(),
         Err(e) => (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
     }
+}
+
+// POST /api/admin/check-permission
+#[derive(serde::Deserialize)]
+pub struct CheckPermissionRequest {
+    pub user_id: i64,
+    pub group_name: String,
+    pub resource: String,
+    pub action: String,
+}
+
+pub async fn check_permission(
+    Extension(admin): Extension<AuthenticatedUser>,
+    Extension(pool): Extension<sqlx::PgPool>,
+    Json(payload): Json<CheckPermissionRequest>,
+) -> impl IntoResponse {
+    if !admin.groups.contains(&"superadmin".to_string()) {
+        return (StatusCode::FORBIDDEN, "Superadmin access required").into_response();
+    }
+
+    let user_repo = Arc::new(PgUserRepository::new(pool.clone()));
+    let policy_repo = Arc::new(PgPolicyRepository::new(pool.clone()));
+    let policy_service = PolicyService::new(policy_repo);
+
+    let user_policies = match user_repo.get_user_all_policies(payload.user_id).await {
+        Ok(policies) => policies,
+        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    };
+
+    let has_permission = policy_service
+        .evaluate_permission(&user_policies, &payload.resource, &payload.action)
+        .await;
+
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "user_id": payload.user_id,
+            "group_name": payload.group_name,
+            "resource": payload.resource,
+            "action": payload.action,
+            "has_permission": has_permission
+        })),
+    )
+        .into_response()
 }
 
 #[cfg(test)]

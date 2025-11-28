@@ -4,14 +4,12 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use uuid::Uuid;
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct CreateGroupRequest {
     pub name: String,
     pub description: Option<String>,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize)]
 pub struct GroupResponse {
     pub group_id: i64,
@@ -21,7 +19,6 @@ pub struct GroupResponse {
     pub policies: Vec<PolicyResponse>,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize)]
 pub struct PolicyResponse {
     pub policy_id: i64,
@@ -33,13 +30,11 @@ pub struct PolicyResponse {
     pub effect: String,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct GroupService<G: GroupRepository> {
     pub repo: Arc<G>,
 }
 
-#[allow(dead_code)]
 impl<G: GroupRepository> GroupService<G> {
     pub fn new(repo: Arc<G>) -> Self {
         Self { repo }
@@ -60,10 +55,12 @@ impl<G: GroupRepository> GroupService<G> {
         self.repo.insert_group(new_group).await
     }
 
+    #[allow(dead_code)]
     pub async fn get_group_by_name(&self, name: &str) -> Result<Option<Group>> {
         self.repo.find_by_name(name).await
     }
 
+    #[allow(dead_code)]
     pub async fn get_group_by_id(&self, group_id: i64) -> Result<Option<Group>> {
         self.repo.find_by_id(group_id).await
     }
@@ -72,6 +69,7 @@ impl<G: GroupRepository> GroupService<G> {
         self.repo.list_groups().await
     }
 
+    #[allow(dead_code)]
     pub async fn get_group_with_policies(&self, group_id: i64) -> Result<Option<GroupResponse>> {
         let group = self.repo.find_by_id(group_id).await?;
 

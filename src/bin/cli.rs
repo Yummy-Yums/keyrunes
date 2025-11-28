@@ -6,6 +6,7 @@ use keyrunes::repository::sqlx_impl::PgUserRepository;
 use keyrunes::services::user_service::{RegisterRequest, UserService};
 use keyrunes::sqlx_impl::{PgGroupRepository, PgPasswordResetRepository, PgSettingsRepository};
 use keyrunes::user_service::{AdminChangePasswordRequest, SettingsService};
+use keyrunes::services::group_service::{CreateGroupRequest, GroupService};
 use sqlx::PgPool;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -33,6 +34,15 @@ enum Commands {
         #[clap(long)]
         first_login: bool,
     },
+    /// Create first superadmin user
+    CreateSuperadmin {
+        #[clap(long)]
+        email: String,
+        #[clap(long)]
+        username: String,
+        #[clap(long)]
+        password: String,
+    },
     /// Login as a user with username, password
     Login {
         // identity can be username or email
@@ -58,6 +68,29 @@ enum Commands {
 
         #[clap(long)]
         password: String,
+    },
+    /// Create a new group
+    CreateGroup {
+        #[clap(long)]
+        name: String,
+        #[clap(long)]
+        description: Option<String>,
+    },
+    /// List all groups
+    ListGroups,
+    /// Assign user to group
+    AssignUserToGroup {
+        #[clap(long)]
+        user_id: i64,
+        #[clap(long)]
+        group_name: String,
+    },
+    /// Remove user from group
+    RemoveUserFromGroup {
+        #[clap(long)]
+        user_id: i64,
+        #[clap(long)]
+        group_name: String,
     },
 }
 
@@ -93,7 +126,7 @@ async fn main() -> anyhow::Result<()> {
 
     let service = Arc::new(UserService::new(
         user_repo,
-        group_repo,
+        Arc::clone(&group_repo),
         password_reset_repo.clone(),
         jwt_service.clone(),
         settings_service,
@@ -129,6 +162,44 @@ async fn main() -> anyhow::Result<()> {
                     u.user.user_id, u.user.external_id
                 ),
                 Err(e) => eprintln!("Error registering user: {}", e),
+            }
+        }
+        Commands::CreateSuperadmin {
+            email,
+            username,
+            password,
+        } => {
+            // Create user
+            let req = RegisterRequest {
+                email: email.clone(),
+                username: username.clone(),
+                password,
+                first_login: Some(false),
+            };
+
+            match service.register(req).await {
+                Ok(u) => {
+                    tracing::info!("Created user {} (id={})", u.user.username, u.user.user_id);
+
+                    let group_service = GroupService::new(group_repo.clone());
+                    match group_service.get_group_by_name("superadmin").await {
+                        Ok(Some(group)) => {
+                            match group_service.assign_user_to_group(u.user.user_id, group.group_id, None).await {
+                                Ok(_) => {
+                                    tracing::info!("✅ Superadmin user created successfully!");
+                                    tracing::info!("   Email: {}", email);
+                                    tracing::info!("   Username: {}", username);
+                                    tracing::info!("   User ID: {}", u.user.user_id);
+                                    tracing::info!("   Group: superadmin");
+                                },
+                                Err(e) => eprintln!("Error assigning user to superadmin group: {}", e),
+                            }
+                        },
+                        Ok(None) => eprintln!("Error: superadmin group not found. Run migrations first."),
+                        Err(e) => eprintln!("Error finding superadmin group: {}", e),
+                    }
+                },
+                Err(e) => eprintln!("Error creating user: {}", e),
             }
         }
         Commands::Login { identity, password } => match service.login(identity, password).await {
@@ -201,6 +272,74 @@ async fn main() -> anyhow::Result<()> {
             service.update_password(change_password_request).await?;
 
             tracing::info!("Updated password successfully for {}", user.username);
+        }
+        Commands::CreateGroup { name, description } => {
+            let group_service = GroupService::new(group_repo.clone());
+            let req = CreateGroupRequest {
+                name: name.clone(),
+                description,
+            };
+
+            match group_service.create_group(req).await {
+                Ok(group) => {
+                    tracing::info!("✅ Group created successfully!");
+                    tracing::info!("   Name: {}", group.name);
+                    tracing::info!("   Group ID: {}", group.group_id);
+                    tracing::info!("   External ID: {}", group.external_id);
+                },
+                Err(e) => eprintln!("Error creating group: {}", e),
+            }
+        }
+        Commands::ListGroups => {
+            let group_service = GroupService::new(group_repo.clone());
+
+            match group_service.list_groups().await {
+                Ok(groups) => {
+                    tracing::info!("📋 Groups:");
+                    for group in groups {
+                        tracing::info!("  • {} (ID: {}) - {}",
+                            group.name,
+                            group.group_id,
+                            group.description.unwrap_or_else(|| "No description".to_string())
+                        );
+                    }
+                },
+                Err(e) => eprintln!("Error listing groups: {}", e),
+            }
+        }
+        Commands::AssignUserToGroup { user_id, group_name } => {
+            let group_service = GroupService::new(group_repo.clone());
+
+            // Find group by name
+            match group_service.get_group_by_name(&group_name).await {
+                Ok(Some(group)) => {
+                    match group_service.assign_user_to_group(user_id, group.group_id, None).await {
+                        Ok(_) => {
+                            tracing::info!("✅ User {} assigned to group '{}' successfully!", user_id, group_name);
+                        },
+                        Err(e) => eprintln!("Error assigning user to group: {}", e),
+                    }
+                },
+                Ok(None) => eprintln!("Error: Group '{}' not found", group_name),
+                Err(e) => eprintln!("Error finding group: {}", e),
+            }
+        }
+        Commands::RemoveUserFromGroup { user_id, group_name } => {
+            let group_service = GroupService::new(group_repo.clone());
+
+            // Find group by name
+            match group_service.get_group_by_name(&group_name).await {
+                Ok(Some(group)) => {
+                    match group_service.remove_user_from_group(user_id, group.group_id).await {
+                        Ok(_) => {
+                            tracing::info!("✅ User {} removed from group '{}' successfully!", user_id, group_name);
+                        },
+                        Err(e) => eprintln!("Error removing user from group: {}", e),
+                    }
+                },
+                Ok(None) => eprintln!("Error: Group '{}' not found", group_name),
+                Err(e) => eprintln!("Error finding group: {}", e),
+            }
         }
     }
 
