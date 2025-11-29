@@ -11,8 +11,8 @@ use argon2::{
     password_hash::{PasswordHasher, SaltString},
 };
 use chrono::{Duration, Utc};
+use password_hash::rand_core::{OsRng, RngCore};
 use password_hash::{PasswordHash, PasswordVerifier};
-use rand::{Rng, thread_rng};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -303,7 +303,7 @@ impl<U: UserRepository, G: GroupRepository, P: PasswordResetRepository, S: Setti
             .ok_or_else(|| anyhow!("email not found"))?;
 
         // Generate reset token
-        let token = self.generate_reset_token();
+        let token = self.generate_reset_token()?;
         let expires_at = Utc::now() + Duration::hours(24); // Token valid for 24 hours
 
         let reset_token = NewPasswordResetToken {
@@ -431,7 +431,7 @@ impl<U: UserRepository, G: GroupRepository, P: PasswordResetRepository, S: Setti
     }
 
     fn hash_password(&self, password: &str) -> Result<String> {
-        let salt = SaltString::generate(thread_rng());
+        let salt = SaltString::generate(&mut OsRng);
         let argon2 = Argon2::default();
         let password_hash = argon2
             .hash_password(password.as_bytes(), &salt)
@@ -440,9 +440,11 @@ impl<U: UserRepository, G: GroupRepository, P: PasswordResetRepository, S: Setti
         Ok(password_hash)
     }
 
-    fn generate_reset_token(&self) -> String {
-        let token_bytes: [u8; 32] = thread_rng().r#gen();
-        hex::encode(token_bytes)
+    fn generate_reset_token(&self) -> Result<String> {
+        let mut bytes = [0u8; 32];
+        OsRng.try_fill_bytes(&mut bytes)
+            .map_err(|e| anyhow!("failed to fill bytes: {}", e))?;
+        Ok(hex::encode(bytes))
     }
 
     #[allow(dead_code)]

@@ -1,5 +1,6 @@
 use axum::{Json, extract::Extension, http::StatusCode, response::IntoResponse};
 use chrono::Utc;
+use password_hash::rand_core::OsRng;
 use serde::{Serialize};
 use sqlx::{PgPool, Row};
 use std::time::SystemTime;
@@ -172,42 +173,24 @@ pub fn test_jwt_service() -> Result<(), Box<dyn std::error::Error>> {
 
 // Made public for tests
 pub fn test_password_hashing() -> Result<(), Box<dyn std::error::Error>> {
-    use argon2::{
-        Argon2,
-        password_hash::{PasswordHasher, SaltString},
-    };
-    use password_hash::{PasswordHash, PasswordVerifier};
-    use rand::thread_rng;
+    use argon2::{Argon2, password_hash::PasswordHasher};
+    use password_hash::{SaltString, PasswordHash, PasswordVerifier};
     use std::io;
 
     let password = "test_password";
-    let salt = SaltString::generate(thread_rng());
+
+    let salt = SaltString::generate(&mut OsRng);
     let argon2 = Argon2::default();
 
-    let hash = match argon2.hash_password(password.as_bytes(), &salt) {
-        Ok(h) => h,
-        Err(e) => {
-            return Err(Box::new(io::Error::other(
-                format!("password hash error: {}", e),
-            )));
-        }
-    };
+    let hash = argon2.hash_password(password.as_bytes(), &salt)
+        .map_err(|e| Box::new(io::Error::other(format!("password hash error: {}", e))))?;
 
-    let hash_string = hash.to_string();
-    let parsed_hash = match PasswordHash::new(&hash_string) {
-        Ok(p) => p,
-        Err(e) => {
-            return Err(Box::new(io::Error::other(
-                format!("password hash parse error: {}", e),
-            )));
-        }
-    };
+    let binding = hash.to_string();
+    let parsed_hash = PasswordHash::new(&binding)
+        .map_err(|e| Box::new(io::Error::other(format!("password hash parse error: {}", e))))?;
 
-    if let Err(e) = argon2.verify_password(password.as_bytes(), &parsed_hash) {
-        return Err(Box::new(io::Error::other(
-            format!("password verify error: {}", e),
-        )));
-    }
+    argon2.verify_password(password.as_bytes(), &parsed_hash)
+        .map_err(|e| Box::new(io::Error::other(format!("password verify error: {}", e))))?;
 
     Ok(())
 }
