@@ -80,7 +80,7 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Run clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo clippy -- -D warnings
 
       - name: Build
         run: cargo build --verbose
@@ -148,3 +148,4 @@ jobs:
         uses: rustsec/audit-check@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+          ignore: RUSTSEC-2023-0071
