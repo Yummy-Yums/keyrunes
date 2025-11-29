@@ -1,3 +1,16 @@
+## [0.1.1] - 2025-11-29
+
+### 🚀 Features
+
+- Add check groups in api and cli
+
+### 🐛 Bug Fixes
+
+- Change jsonwebtoken to josekit and remove sqlx-mysql and rsa
+
+### 💼 Other
+
+- Update libraries
 ## [0.1.0] - 2025-11-27
 
 ### 🚀 Features
@@ -23,6 +36,7 @@
 - Adding default run
 - Saved tokens in db and added settings table
 - Resolved comments
+- Fix merge
 
 ### 💼 Other
 
