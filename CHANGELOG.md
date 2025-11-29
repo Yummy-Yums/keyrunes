@@ -11,6 +11,11 @@
 ### 💼 Other
 
 - Update libraries
+- Add ignore in cargo audit false positive
+
+### ⚙️ Miscellaneous Tasks
+
+- Update changelog
 ## [0.1.0] - 2025-11-27
 
 ### 🚀 Features
