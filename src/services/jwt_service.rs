@@ -1,31 +1,32 @@
 use anyhow::{Result, anyhow};
 use chrono::{Duration, Utc};
-use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
+use josekit::jws::HS256;
+use josekit::jws::JwsHeader;
+use josekit::jwt::{self, JwtPayload};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Claims {
-    pub sub: String,         // Subject (user_id)
-    pub email: String,       // User email
-    pub username: String,    // Username
-    pub groups: Vec<String>, // User groups
-    pub exp: i64,            // Expiration time
-    pub iat: i64,            // Issued at
-    pub iss: String,         // Issuer
+    pub sub: String,
+    pub email: String,
+    pub username: String,
+    pub groups: Vec<String>,
+    pub exp: i64,
+    pub iat: i64,
+    pub iss: String,
 }
 
 #[derive(Clone)]
 pub struct JwtService {
-    encoding_key: EncodingKey,
-    decoding_key: DecodingKey,
+    secret: Vec<u8>,
     issuer: String,
 }
 
 impl JwtService {
     pub fn new(secret: &str) -> Self {
         Self {
-            encoding_key: EncodingKey::from_secret(secret.as_ref()),
-            decoding_key: DecodingKey::from_secret(secret.as_ref()),
+            secret: secret.as_bytes().to_vec(),
             issuer: "keyrunes".to_string(),
         }
     }
@@ -38,37 +39,77 @@ impl JwtService {
         groups: Vec<String>,
     ) -> Result<String> {
         let now = Utc::now();
-        let exp = now + Duration::hours(1); // Token expires in 1 hour
+        let exp = now + Duration::hours(1);
 
-        let claims = Claims {
-            sub: user_id.to_string(),
-            email: email.to_string(),
-            username: username.to_string(),
-            groups,
-            exp: exp.timestamp(),
-            iat: now.timestamp(),
-            iss: self.issuer.clone(),
-        };
+        let mut payload = JwtPayload::new();
+        payload.set_claim("sub", Some(Value::String(user_id.to_string())))?;
+        payload.set_claim("email", Some(Value::String(email.to_string())))?;
+        payload.set_claim("username", Some(Value::String(username.to_string())))?;
+        payload.set_claim("groups", Some(serde_json::to_value(&groups)?))?;
+        payload.set_claim("exp", Some(Value::Number(exp.timestamp().into())))?;
+        payload.set_claim("iat", Some(Value::Number(now.timestamp().into())))?;
+        payload.set_claim("iss", Some(Value::String(self.issuer.clone())))?;
 
-        encode(&Header::default(), &claims, &self.encoding_key)
-            .map_err(|e| anyhow!("Failed to encode JWT: {}", e))
+        let mut header = JwsHeader::new();
+        header.set_token_type("JWT");
+
+        let signer = HS256.signer_from_bytes(&self.secret)?;
+        let token = jwt::encode_with_signer(&payload, &header, &signer)?;
+
+        Ok(token)
     }
 
     pub fn verify_token(&self, token: &str) -> Result<Claims> {
-        let token_data = decode::<Claims>(
-            token,
-            &self.decoding_key,
-            &Validation::new(Algorithm::HS256),
-        )
-        .map_err(|e| anyhow!("Failed to decode JWT: {}", e))?;
+        let verifier = HS256.verifier_from_bytes(&self.secret)?;
+        let (payload, _header) = jwt::decode_with_verifier(token, &verifier)
+            .map_err(|e| anyhow!("Failed to decode JWT: {}", e))?;
 
-        Ok(token_data.claims)
+        let sub = payload
+            .claim("sub")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow!("Missing or invalid 'sub' claim"))?
+            .to_string();
+        let email = payload
+            .claim("email")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow!("Missing or invalid 'email' claim"))?
+            .to_string();
+        let username = payload
+            .claim("username")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow!("Missing or invalid 'username' claim"))?
+            .to_string();
+        let groups = payload
+            .claim("groups")
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .ok_or_else(|| anyhow!("Missing or invalid 'groups' claim"))?;
+        let exp = payload
+            .claim("exp")
+            .and_then(|v| v.as_i64())
+            .ok_or_else(|| anyhow!("Missing or invalid 'exp' claim"))?;
+        let iat = payload
+            .claim("iat")
+            .and_then(|v| v.as_i64())
+            .ok_or_else(|| anyhow!("Missing or invalid 'iat' claim"))?;
+        let iss = payload
+            .claim("iss")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow!("Missing or invalid 'iss' claim"))?
+            .to_string();
+
+        Ok(Claims {
+            sub,
+            email,
+            username,
+            groups,
+            exp,
+            iat,
+            iss,
+        })
     }
 
     pub fn refresh_token(&self, token: &str) -> Result<String> {
         let claims = self.verify_token(token)?;
-
-        // Generate new token with same claims but updated expiration
         self.generate_token(
             claims.sub.parse()?,
             &claims.email,
@@ -90,11 +131,11 @@ impl JwtService {
 mod tests {
     use super::*;
     use std::thread;
-    use std::time::Duration;
+    use std::time::Duration as StdDuration;
 
     #[test]
     fn test_jwt_token_generation_and_verification() {
-        let service = JwtService::new("test_secret");
+        let service = JwtService::new("0123456789ABCDEF0123456789ABCDEF");
         let groups = vec!["users".to_string(), "admin".to_string()];
 
         let token = service
@@ -111,16 +152,14 @@ mod tests {
 
     #[test]
     fn test_refresh_token() {
-        let service = JwtService::new("test_secret");
+        let service = JwtService::new("0123456789ABCDEF0123456789ABCDEF");
         let groups = vec!["users".to_string()];
 
         let original_token = service
             .generate_token(1, "test@example.com", "testuser", groups.clone())
             .unwrap();
 
-        use std::thread;
-        use std::time::Duration;
-        thread::sleep(Duration::from_secs(1));
+        thread::sleep(StdDuration::from_secs(1));
 
         let refreshed_token = service.refresh_token(&original_token).unwrap();
 
@@ -134,7 +173,7 @@ mod tests {
 
     #[test]
     fn test_extract_user_id() {
-        let service = JwtService::new("test_secret");
+        let service = JwtService::new("0123456789ABCDEF0123456789ABCDEF");
         let groups = vec!["users".to_string()];
 
         let token = service

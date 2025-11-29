@@ -3,15 +3,15 @@ use keyrunes::NewPasswordResetToken;
 use keyrunes::PasswordResetRepository;
 use keyrunes::jwt_service::JwtService;
 use keyrunes::repository::sqlx_impl::PgUserRepository;
+use keyrunes::services::group_service::{CreateGroupRequest, GroupService};
 use keyrunes::services::user_service::{RegisterRequest, UserService};
 use keyrunes::sqlx_impl::{PgGroupRepository, PgPasswordResetRepository, PgSettingsRepository};
 use keyrunes::user_service::{AdminChangePasswordRequest, SettingsService};
-use keyrunes::services::group_service::{CreateGroupRequest, GroupService};
 use sqlx::PgPool;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing_subscriber::filter::LevelFilter;
 use tera::Tera;
+use tracing_subscriber::filter::LevelFilter;
 
 #[derive(Parser)]
 #[clap(name = "Keyrunes CLI")]
@@ -184,21 +184,28 @@ async fn main() -> anyhow::Result<()> {
                     let group_service = GroupService::new(group_repo.clone());
                     match group_service.get_group_by_name("superadmin").await {
                         Ok(Some(group)) => {
-                            match group_service.assign_user_to_group(u.user.user_id, group.group_id, None).await {
+                            match group_service
+                                .assign_user_to_group(u.user.user_id, group.group_id, None)
+                                .await
+                            {
                                 Ok(_) => {
                                     tracing::info!("✅ Superadmin user created successfully!");
                                     tracing::info!("   Email: {}", email);
                                     tracing::info!("   Username: {}", username);
                                     tracing::info!("   User ID: {}", u.user.user_id);
                                     tracing::info!("   Group: superadmin");
-                                },
-                                Err(e) => eprintln!("Error assigning user to superadmin group: {}", e),
+                                }
+                                Err(e) => {
+                                    eprintln!("Error assigning user to superadmin group: {}", e)
+                                }
                             }
-                        },
-                        Ok(None) => eprintln!("Error: superadmin group not found. Run migrations first."),
+                        }
+                        Ok(None) => {
+                            eprintln!("Error: superadmin group not found. Run migrations first.")
+                        }
                         Err(e) => eprintln!("Error finding superadmin group: {}", e),
                     }
-                },
+                }
                 Err(e) => eprintln!("Error creating user: {}", e),
             }
         }
@@ -286,7 +293,7 @@ async fn main() -> anyhow::Result<()> {
                     tracing::info!("   Name: {}", group.name);
                     tracing::info!("   Group ID: {}", group.group_id);
                     tracing::info!("   External ID: {}", group.external_id);
-                },
+                }
                 Err(e) => eprintln!("Error creating group: {}", e),
             }
         }
@@ -297,46 +304,69 @@ async fn main() -> anyhow::Result<()> {
                 Ok(groups) => {
                     tracing::info!("📋 Groups:");
                     for group in groups {
-                        tracing::info!("  • {} (ID: {}) - {}",
+                        tracing::info!(
+                            "  • {} (ID: {}) - {}",
                             group.name,
                             group.group_id,
-                            group.description.unwrap_or_else(|| "No description".to_string())
+                            group
+                                .description
+                                .unwrap_or_else(|| "No description".to_string())
                         );
                     }
-                },
+                }
                 Err(e) => eprintln!("Error listing groups: {}", e),
             }
         }
-        Commands::AssignUserToGroup { user_id, group_name } => {
+        Commands::AssignUserToGroup {
+            user_id,
+            group_name,
+        } => {
             let group_service = GroupService::new(group_repo.clone());
 
             // Find group by name
             match group_service.get_group_by_name(&group_name).await {
                 Ok(Some(group)) => {
-                    match group_service.assign_user_to_group(user_id, group.group_id, None).await {
+                    match group_service
+                        .assign_user_to_group(user_id, group.group_id, None)
+                        .await
+                    {
                         Ok(_) => {
-                            tracing::info!("✅ User {} assigned to group '{}' successfully!", user_id, group_name);
-                        },
+                            tracing::info!(
+                                "✅ User {} assigned to group '{}' successfully!",
+                                user_id,
+                                group_name
+                            );
+                        }
                         Err(e) => eprintln!("Error assigning user to group: {}", e),
                     }
-                },
+                }
                 Ok(None) => eprintln!("Error: Group '{}' not found", group_name),
                 Err(e) => eprintln!("Error finding group: {}", e),
             }
         }
-        Commands::RemoveUserFromGroup { user_id, group_name } => {
+        Commands::RemoveUserFromGroup {
+            user_id,
+            group_name,
+        } => {
             let group_service = GroupService::new(group_repo.clone());
 
             // Find group by name
             match group_service.get_group_by_name(&group_name).await {
                 Ok(Some(group)) => {
-                    match group_service.remove_user_from_group(user_id, group.group_id).await {
+                    match group_service
+                        .remove_user_from_group(user_id, group.group_id)
+                        .await
+                    {
                         Ok(_) => {
-                            tracing::info!("✅ User {} removed from group '{}' successfully!", user_id, group_name);
-                        },
+                            tracing::info!(
+                                "✅ User {} removed from group '{}' successfully!",
+                                user_id,
+                                group_name
+                            );
+                        }
                         Err(e) => eprintln!("Error removing user from group: {}", e),
                     }
-                },
+                }
                 Ok(None) => eprintln!("Error: Group '{}' not found", group_name),
                 Err(e) => eprintln!("Error finding group: {}", e),
             }
@@ -414,7 +444,11 @@ mod tests {
         async fn find_by_id(&self, _id: i64) -> anyhow::Result<Option<User>> {
             unimplemented!()
         }
-        async fn update_user_password(&self, user_id: i64, password_hash: &str) -> anyhow::Result<()> {
+        async fn update_user_password(
+            &self,
+            user_id: i64,
+            password_hash: &str,
+        ) -> anyhow::Result<()> {
             let mut users = self.users.lock().unwrap();
             if let Some(user) = users.iter_mut().find(|u| u.user_id == user_id) {
                 user.password_hash = password_hash.to_string();
@@ -472,7 +506,10 @@ mod tests {
         ) -> anyhow::Result<()> {
             unimplemented!()
         }
-        async fn get_group_policies(&self, _group_id: i64) -> anyhow::Result<Vec<keyrunes::repository::Policy>> {
+        async fn get_group_policies(
+            &self,
+            _group_id: i64,
+        ) -> anyhow::Result<Vec<keyrunes::repository::Policy>> {
             Ok(vec![])
         }
     }
@@ -494,7 +531,10 @@ mod tests {
                 created_at: chrono::Utc::now(),
             })
         }
-        async fn find_valid_token(&self, _token: &str) -> anyhow::Result<Option<PasswordResetToken>> {
+        async fn find_valid_token(
+            &self,
+            _token: &str,
+        ) -> anyhow::Result<Option<PasswordResetToken>> {
             Ok(None)
         }
         async fn mark_token_used(&self, _token_id: i64) -> anyhow::Result<()> {
@@ -553,7 +593,9 @@ mod tests {
         let user_repo = Arc::new(MockUserRepo::new());
         let group_repo = Arc::new(MockGroupRepo);
         let password_reset_repo = Arc::new(MockPasswordResetRepo);
-        let jwt_service = Arc::new(keyrunes::services::jwt_service::JwtService::new("test_secret"));
+        let jwt_service = Arc::new(keyrunes::services::jwt_service::JwtService::new(
+            "test_secret",
+        ));
         let settings_repo = Arc::new(MockSettingsRepo);
         let settings_service = Arc::new(SettingsService::new(settings_repo));
 
@@ -585,7 +627,9 @@ mod tests {
         let user_repo = Arc::new(MockUserRepo::new());
         let group_repo = Arc::new(MockGroupRepo);
         let password_reset_repo = Arc::new(MockPasswordResetRepo);
-        let jwt_service = Arc::new(keyrunes::services::jwt_service::JwtService::new("test_secret"));
+        let jwt_service = Arc::new(keyrunes::services::jwt_service::JwtService::new(
+            "test_secret",
+        ));
         let settings_repo = Arc::new(MockSettingsRepo);
         let settings_service = Arc::new(SettingsService::new(settings_repo));
 
@@ -599,7 +643,9 @@ mod tests {
         );
 
         // Test with non-existent email
-        let user = service.find_user_by_email(&"nonexistent@example.com".to_string()).await;
+        let user = service
+            .find_user_by_email(&"nonexistent@example.com".to_string())
+            .await;
         assert!(user.is_none());
     }
 
@@ -608,7 +654,9 @@ mod tests {
         let user_repo = Arc::new(MockUserRepo::new());
         let group_repo = Arc::new(MockGroupRepo);
         let password_reset_repo = Arc::new(MockPasswordResetRepo);
-        let jwt_service = Arc::new(keyrunes::services::jwt_service::JwtService::new("test_secret"));
+        let jwt_service = Arc::new(keyrunes::services::jwt_service::JwtService::new(
+            "0123456789ABCDEF0123456789ABCDEF",
+        ));
         let settings_repo = Arc::new(MockSettingsRepo);
         let settings_service = Arc::new(SettingsService::new(settings_repo));
 
@@ -659,7 +707,9 @@ mod tests {
         let user_repo = Arc::new(MockUserRepo::new());
         let group_repo = Arc::new(MockGroupRepo);
         let password_reset_repo = Arc::new(MockPasswordResetRepo);
-        let jwt_service = Arc::new(keyrunes::services::jwt_service::JwtService::new("test_secret"));
+        let jwt_service = Arc::new(keyrunes::services::jwt_service::JwtService::new(
+            "test_secret",
+        ));
         let settings_repo = Arc::new(MockSettingsRepo);
         let settings_service = Arc::new(SettingsService::new(settings_repo));
 
@@ -673,7 +723,9 @@ mod tests {
         );
 
         // Test with non-existent username
-        let user = service.find_user_by_username(&"nonexistent".to_string()).await;
+        let user = service
+            .find_user_by_username(&"nonexistent".to_string())
+            .await;
         assert!(user.is_none());
     }
 
@@ -730,7 +782,13 @@ mod tests {
     #[ignore] // Requires CLI binary and database setup
     fn test_recover_user_with_url_successfully() {
         let output = Command::new("./target/debug/cli")
-            .args(&["recover-user", "--username", &USERNAME, "--generate-token", "true"])
+            .args(&[
+                "recover-user",
+                "--username",
+                &USERNAME,
+                "--generate-token",
+                "true",
+            ])
             .output()
             .expect("Failed to execute command");
 

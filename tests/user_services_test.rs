@@ -352,7 +352,7 @@ fn helper_service() -> UserServiceType {
     ));
     let password_reset_repo = Arc::new(MockPasswordResetRepository);
     let jwt_service = Arc::new(keyrunes::services::jwt_service::JwtService::new(
-        "test_secret",
+        "0123456789ABCDEF0123456789ABCDEF",
     ));
 
     let settings_repo = Arc::new(MockSettingsRepository::new());
@@ -489,7 +489,7 @@ async fn test_duplicate_registration() {
     ));
     let password_reset_repo = Arc::new(MockPasswordResetRepository);
     let jwt_service = Arc::new(keyrunes::services::jwt_service::JwtService::new(
-        "test_secret",
+        "0123456789ABCDEF0123456789ABCDEF",
     ));
     let settings_repo = Arc::new(MockSettingsRepository::new());
     let settings_service = Arc::new(SettingsService::new(settings_repo));
@@ -537,7 +537,7 @@ async fn test_password_validation() {
     ));
     let password_reset_repo = Arc::new(MockPasswordResetRepository);
     let jwt_service = Arc::new(keyrunes::services::jwt_service::JwtService::new(
-        "test_secret",
+        "0123456789ABCDEF0123456789ABCDEF",
     ));
     let settings_repo = Arc::new(MockSettingsRepository::new());
     let settings_service = Arc::new(SettingsService::new(settings_repo));
@@ -577,7 +577,7 @@ async fn test_email_validation() {
     ));
     let password_reset_repo = Arc::new(MockPasswordResetRepository);
     let jwt_service = Arc::new(keyrunes::services::jwt_service::JwtService::new(
-        "test_secret",
+        "0123456789ABCDEF0123456789ABCDEF",
     ));
     let settings_repo = Arc::new(MockSettingsRepository::new());
     let settings_service = Arc::new(SettingsService::new(settings_repo));
@@ -617,7 +617,7 @@ async fn test_change_password() {
     ));
     let password_reset_repo = Arc::new(MockPasswordResetRepository);
     let jwt_service = Arc::new(keyrunes::services::jwt_service::JwtService::new(
-        "test_secret",
+        "0123456789ABCDEF0123456789ABCDEF",
     ));
     let settings_repo = Arc::new(MockSettingsRepository::new());
     let settings_service = Arc::new(SettingsService::new(settings_repo));
@@ -678,7 +678,7 @@ async fn admin_create_user_with_groups() {
     ));
     let password_reset_repo = Arc::new(MockPasswordResetRepository);
     let jwt_service = Arc::new(keyrunes::services::jwt_service::JwtService::new(
-        "test_secret",
+        "0123456789ABCDEF0123456789ABCDEF",
     ));
 
     let settings_repo = Arc::new(MockSettingsRepository::new());

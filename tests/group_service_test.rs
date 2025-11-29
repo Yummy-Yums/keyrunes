@@ -77,7 +77,10 @@ impl GroupRepository for MockGroupRepository {
     ) -> Result<()> {
         let mut user_groups = self.user_groups.lock().unwrap();
 
-        if user_groups.iter().any(|(uid, gid, _)| *uid == user_id && *gid == group_id) {
+        if user_groups
+            .iter()
+            .any(|(uid, gid, _)| *uid == user_id && *gid == group_id)
+        {
             return Err(anyhow::anyhow!("User already assigned to this group"));
         }
 
@@ -188,7 +191,11 @@ async fn test_assign_user_to_group_success() {
     assert!(result.is_ok());
 
     let user_groups = repo.user_groups.lock().unwrap();
-    assert!(user_groups.iter().any(|(uid, gid, _)| *uid == 100 && *gid == 1));
+    assert!(
+        user_groups
+            .iter()
+            .any(|(uid, gid, _)| *uid == 100 && *gid == 1)
+    );
 }
 
 #[tokio::test]
@@ -211,7 +218,10 @@ async fn test_assign_user_to_group_duplicate() {
 
     let result2 = service.assign_user_to_group(100, 1, Some(1)).await;
     assert!(result2.is_err());
-    assert_eq!(result2.unwrap_err().to_string(), "User already assigned to this group");
+    assert_eq!(
+        result2.unwrap_err().to_string(),
+        "User already assigned to this group"
+    );
 }
 
 #[tokio::test]
@@ -284,6 +294,14 @@ async fn test_assign_user_to_multiple_groups() {
 
     let user_groups = repo.user_groups.lock().unwrap();
     assert_eq!(user_groups.len(), 2);
-    assert!(user_groups.iter().any(|(uid, gid, _)| *uid == 100 && *gid == 1));
-    assert!(user_groups.iter().any(|(uid, gid, _)| *uid == 100 && *gid == 2));
+    assert!(
+        user_groups
+            .iter()
+            .any(|(uid, gid, _)| *uid == 100 && *gid == 1)
+    );
+    assert!(
+        user_groups
+            .iter()
+            .any(|(uid, gid, _)| *uid == 100 && *gid == 2)
+    );
 }

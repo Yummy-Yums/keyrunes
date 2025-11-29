@@ -4,7 +4,6 @@ use axum::{
 };
 use tower::ServiceExt;
 
-
 #[tokio::test]
 async fn test_admin_endpoint_structure() {
     let endpoints = vec![
@@ -142,10 +141,10 @@ fn test_invalid_user_id() {
 #[test]
 fn test_wildcard_resource_patterns() {
     let patterns = vec![
-        "*",           // All resources
-        "user:*",      // All user resources
-        "user:self",   // Own user resource
-        "admin:*",     // All admin resources
+        "*",         // All resources
+        "user:*",    // All user resources
+        "user:self", // Own user resource
+        "admin:*",   // All admin resources
     ];
 
     for pattern in patterns {

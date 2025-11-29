@@ -241,9 +241,7 @@ fn extract_bearer_token(headers: &HeaderMap) -> Option<String> {
     let auth_header = headers.get("authorization")?;
     let auth_str = auth_header.to_str().ok()?;
 
-    auth_str
-        .strip_prefix("Bearer ")
-        .map(|s| s.to_string())
+    auth_str.strip_prefix("Bearer ").map(|s| s.to_string())
 }
 
 #[cfg(test)]

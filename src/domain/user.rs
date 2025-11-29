@@ -63,9 +63,7 @@ impl<'de> Deserialize<'de> for Password {
     {
         let password = String::deserialize(deserializer)?;
 
-        Ok(Self::try_from(password.as_str())
-            .map_err(|e| serde::de::Error::custom(e.to_string())))?
-
+        Ok(Self::try_from(password.as_str()).map_err(|e| serde::de::Error::custom(e.to_string())))?
     }
 }
 

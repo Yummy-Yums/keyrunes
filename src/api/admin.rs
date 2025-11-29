@@ -1,3 +1,4 @@
+use crate::repository::UserRepository;
 use axum::{
     Json,
     extract::{Extension, Path},
@@ -6,7 +7,6 @@ use axum::{
 };
 use serde::Serialize;
 use std::sync::Arc;
-use crate::repository::UserRepository;
 
 use crate::repository::sqlx_impl::{
     PgGroupRepository, PgPasswordResetRepository, PgPolicyRepository, PgSettingsRepository,

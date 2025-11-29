@@ -140,7 +140,7 @@ async fn main() -> anyhow::Result<()> {
         )
         .route("/api/refresh-token", post(api::auth::refresh_token_api))
         .route("/api/me", get(api::auth::me_api));
-    
+
     // Admin routes
     let admin_web_router = Router::new()
         .route("/admin", get(views::admin::admin_page))
@@ -151,11 +151,22 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/admin/dashboard", get(api::admin::admin_dashboard))
         .route("/api/admin/users", get(api::admin::list_users))
         .route("/api/admin/user", post(api::admin::create_user))
-        .route("/api/admin/groups", get(api::admin::list_groups).post(api::admin::create_group))
-        .route("/api/admin/policies", get(api::admin::list_policies).post(api::admin::create_policy))
-        .route("/api/admin/users/{user_id}/groups/{group_id}",
-            post(api::admin::assign_user_to_group).delete(api::admin::remove_user_from_group))
-        .route("/api/admin/check-permission", post(api::admin::check_permission))
+        .route(
+            "/api/admin/groups",
+            get(api::admin::list_groups).post(api::admin::create_group),
+        )
+        .route(
+            "/api/admin/policies",
+            get(api::admin::list_policies).post(api::admin::create_policy),
+        )
+        .route(
+            "/api/admin/users/{user_id}/groups/{group_id}",
+            post(api::admin::assign_user_to_group).delete(api::admin::remove_user_from_group),
+        )
+        .route(
+            "/api/admin/check-permission",
+            post(api::admin::check_permission),
+        )
         .layer(from_fn(require_superadmin))
         .layer(from_fn(require_auth));
 
@@ -178,7 +189,9 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("  • Health: /api/health, /api/health/ready, /api/health/live");
     tracing::info!("  • Public: /login, /register, /forgot-password, /reset-password");
     tracing::info!("  • Protected: /dashboard, /change-password");
-    tracing::info!("  • API: /api/login, /api/register, /api/forgot-password, /api/reset-password, /api/me, /api/refresh-token");
+    tracing::info!(
+        "  • API: /api/login, /api/register, /api/forgot-password, /api/reset-password, /api/me, /api/refresh-token"
+    );
     tracing::info!("  • Admin Web (superadmin only):");
     tracing::info!("    - Admin Panel: GET /admin");
     tracing::info!("  • Admin API (superadmin only):");
@@ -186,7 +199,9 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("    - Users: GET /api/admin/users, POST /api/admin/user");
     tracing::info!("    - Groups: GET/POST /api/admin/groups");
     tracing::info!("    - Policies: GET/POST /api/admin/policies");
-    tracing::info!("    - User-Group: POST/DELETE /api/admin/users/{{user_id}}/groups/{{group_id}}");
+    tracing::info!(
+        "    - User-Group: POST/DELETE /api/admin/users/{{user_id}}/groups/{{group_id}}"
+    );
     tracing::info!("    - Check Permission: POST /api/admin/check-permission");
 
     axum::serve(listener, app).await.unwrap();

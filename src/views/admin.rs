@@ -17,12 +17,15 @@ pub async fn admin_page(
     }
 
     let mut context = tera::Context::new();
-    context.insert("user", &serde_json::json!({
-        "user_id": user.user_id,
-        "username": user.username,
-        "email": user.email,
-        "groups": user.groups,
-    }));
+    context.insert(
+        "user",
+        &serde_json::json!({
+            "user_id": user.user_id,
+            "username": user.username,
+            "email": user.email,
+            "groups": user.groups,
+        }),
+    );
 
     match tera.render("admin.html", &context) {
         Ok(html) => Html(html).into_response(),

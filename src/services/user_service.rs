@@ -43,7 +43,6 @@ pub struct CreateUserRequest {
     pub first_login: bool,
 }
 
-
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct RegisterRequest {
@@ -384,11 +383,7 @@ impl<U: UserRepository, G: GroupRepository, P: PasswordResetRepository, S: Setti
 
     #[allow(dead_code)]
     pub async fn find_user_by_username(&self, username: &str) -> Option<User> {
-        let user: Option<User> = self
-            .user_repo
-            .find_by_username(username)
-            .await
-            .unwrap();
+        let user: Option<User> = self.user_repo.find_by_username(username).await.unwrap();
         user
     }
 
@@ -442,7 +437,8 @@ impl<U: UserRepository, G: GroupRepository, P: PasswordResetRepository, S: Setti
 
     fn generate_reset_token(&self) -> Result<String> {
         let mut bytes = [0u8; 32];
-        OsRng.try_fill_bytes(&mut bytes)
+        OsRng
+            .try_fill_bytes(&mut bytes)
             .map_err(|e| anyhow!("failed to fill bytes: {}", e))?;
         Ok(hex::encode(bytes))
     }
