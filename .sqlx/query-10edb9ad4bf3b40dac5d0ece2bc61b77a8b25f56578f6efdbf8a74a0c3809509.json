@@ -1,0 +1,82 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT p.policy_id, p.external_id, p.organization_id, p.name, p.description, p.resource, p.action, \n               p.effect as \"effect_str\", p.conditions, p.created_at, p.updated_at\n               FROM policies p\n               INNER JOIN user_policies up ON p.policy_id = up.policy_id\n               WHERE up.user_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "policy_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "external_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "organization_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "resource",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "action",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "effect_str",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "conditions",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 9,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 10,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "10edb9ad4bf3b40dac5d0ece2bc61b77a8b25f56578f6efdbf8a74a0c3809509"
+}

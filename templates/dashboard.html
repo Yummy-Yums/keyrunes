@@ -2,51 +2,169 @@
 
 {% block header %}
 <h1>Keyrunes</h1>
-<hr/>
+<hr />
 {% endblock header %}
 
 {% block content %}
-  <section class="card">
-    <h2>Dashboard</h2>
-    
-    {% if user %}
-      <div class="alert alert-success">
-        Welcome, <strong>{{ user.username }}</strong>! ({{ user.email }})
-      </div>
-      
-      <h3>Your Groups</h3>
-      <ul>
-        {% for group in user.groups %}
-          <li>{{ group }}</li>
-        {% else %}
-          <li>No groups assigned</li>
-        {% endfor %}
-      </ul>
-      
-      <div style="margin-top: 2rem;">
-        <button onclick="logout()" class="btn btn-secondary">Logout</button>
-        {% if user.first_login %}
-          <a href="/change-password" class="btn btn-warning">Change Password</a>
-        {% endif %}
-      </div>
-    {% else %}
-      <div class="alert alert-danger">
-        You are not logged in. Please <a href="/login">login</a> to continue.
-      </div>
-    {% endif %}
-  </section>
+<section class="card">
+  <h2>Dashboard</h2>
 
-  <script>
-    function logout() {
-      localStorage.removeItem('jwt_token');
-      window.location.href = '/login';
-    }
-    
-    // Check if user needs to change password
-    {% if user and user.first_login %}
-      if (confirm('You need to change your password. Would you like to do it now?')) {
-        window.location.href = '/change-password';
+  <div id="user-info" hx-get="/api/me" hx-trigger="load" hx-swap="innerHTML">
+    <p>Loading user information...</p>
+  </div>
+</section>
+
+<section class="card" id="org-settings" style="display: none; margin-top: 1rem;">
+  <h2>Organization Settings</h2>
+  <div id="org-secret-content">
+    <p class="htmx-indicator">Loading organization secret...</p>
+  </div>
+  <div style="margin-top: 1rem;">
+    <a href="/admin" id="admin-panel-link" style="display: none;" class="btn btn-secondary">Open System Admin Panel</a>
+  </div>
+</section>
+
+<section class="card" id="superadmin-section" style="display: none; margin-top: 1rem;">
+  <h2>System Administration</h2>
+  <h3>Create New Organization</h3>
+  <div id="create-org-message"></div>
+  <form hx-post="/api/organizations" hx-target="#create-org-message" hx-swap="innerHTML"
+    hx-indicator="#create-org-indicator" hx-on::after-request="handleOrgCreation(event)">
+    <label for="org_name">Organization Name</label>
+    <input type="text" id="org_name" name="name" required placeholder="My New Company" />
+
+    <label for="org_description">Description (Optional)</label>
+    <textarea id="org_description" name="description" placeholder="A brief description"></textarea>
+
+    <button type="submit" class="btn btn-primary">
+      <span class="htmx-indicator" id="create-org-indicator">Creating...</span>
+      Create Organization
+    </button>
+  </form>
+</section>
+
+<script>
+  function logout() {
+    document.cookie = 'jwt_token=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 UTC;';
+    window.location.href = '/login';
+  }
+
+  function handleOrgCreation(event) {
+    console.log('🎯 handleOrgCreation called:', event.detail);
+    const messageDiv = document.getElementById('create-org-message');
+    if (event.detail.successful) {
+      try {
+        const org = JSON.parse(event.detail.xhr.responseText);
+        console.log('✅ Organization created:', org);
+        messageDiv.innerHTML = `<div class="message message-success">Organization <strong>${org.name}</strong> created successfully! (ID: ${org.organization_id})</div>`;
+        event.detail.elt.reset();
+      } catch (e) {
+        console.error('❌ Parse error:', e);
+        messageDiv.innerHTML = `<div class="message message-success">Organization created successfully!</div>`;
       }
-    {% endif %}
-  </script>
+    } else {
+      console.error('❌ Request failed:', event.detail.xhr.status, event.detail.xhr.responseText);
+      messageDiv.innerHTML = `<div class="message message-error">Error: ${event.detail.xhr.responseText}</div>`;
+    }
+  }
+
+  document.body.addEventListener('htmx:afterSwap', function (evt) {
+    if (evt.detail.target.id === 'user-info') {
+      try {
+        const user = JSON.parse(evt.detail.xhr.responseText);
+        evt.detail.target.innerHTML = `
+        <div class="message message-success">
+          Welcome, <strong>${user.username}</strong>! (${user.email})<br>
+          <small>Organization ID: ${user.organization_id}</small>
+        </div>
+        
+        <h3>Your Groups</h3>
+        <ul>
+          ${user.groups && user.groups.length > 0
+            ? user.groups.map(g => `<li>${g}</li>`).join('')
+            : '<li>No groups assigned</li>'}
+        </ul>
+        
+        <div style="margin-top: 2rem;">
+          <button onclick="logout()" class="btn btn-secondary">Logout</button>
+          <a href="/profile" class="btn btn-primary">Edit Profile</a>
+          ${user.first_login ? '<a href="/change-password" class="btn btn-warning">Change Password</a>' : ''}
+        </div>
+      `;
+
+        if (user.first_login) {
+          if (confirm('You need to change your password. Would you like to do it now?')) {
+            window.location.href = '/change-password';
+          }
+        }
+
+        const isSuperadmin = user.groups && user.groups.includes('superadmin');
+        const isAdmin = user.groups && (user.groups.includes('admin') || isSuperadmin);
+
+        if (isSuperadmin) {
+          const saSection = document.getElementById('superadmin-section');
+          if (saSection) saSection.style.display = 'block';
+
+          const adminLink = document.getElementById('admin-panel-link');
+          if (adminLink) adminLink.style.display = 'inline-block';
+        }
+
+        if (isAdmin) {
+          const orgSection = document.getElementById('org-settings');
+          if (orgSection) {
+            orgSection.style.display = 'block';
+            fetch('/api/org/secret', {
+              credentials: 'include'
+            })
+              .then(r => {
+                if (!r.ok) {
+                  document.getElementById('org-secret-content').innerHTML = `<p class="message message-error">Error loading secret.</p>`;
+                  return null;
+                }
+                return r.json();
+              })
+              .then(data => {
+                if (!data) return;
+                document.getElementById('org-secret-content').innerHTML = `
+                <div class="card" style="background: #f8f9fa; border: 1px solid #dee2e6;">
+                  <p><strong>App ID:</strong> <code>${data.organization_id}</code></p>
+                  <p><strong>App Secret:</strong> <code id="org-secret-key">${data.secret_key}</code></p>
+                  <button onclick="rotateOrgKey()" class="btn btn-warning btn-sm">Rotate Secret</button>
+                </div>
+              `;
+              })
+              .catch(err => {
+                document.getElementById('org-secret-content').innerHTML = `<p class="message message-error">Error loading secret.</p>`;
+              });
+          }
+        }
+      } catch (e) {
+        evt.detail.target.innerHTML = `
+        <div class="message message-error">
+          Error loading user information. Please <a href="/login">login</a> again.
+        </div>
+      `;
+      }
+    }
+  });
+
+  function rotateOrgKey() {
+    if (!confirm('Are you sure you want to rotate the organization secret? The old key will stop working immediately.')) return;
+
+    fetch('/api/org/secret/rotate', {
+      method: 'POST',
+      credentials: 'include'
+    })
+      .then(r => r.json())
+      .then(data => {
+        const keyEl = document.getElementById('org-secret-key');
+        if (keyEl) {
+          keyEl.textContent = data.secret_key;
+          keyEl.style.backgroundColor = '#d4edda';
+          setTimeout(() => { keyEl.style.backgroundColor = ''; }, 2000);
+        }
+      })
+      .catch(err => alert('Error rotating key: ' + err.message));
+  }
+</script>
 {% endblock %}

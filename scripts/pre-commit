@@ -1,0 +1,20 @@
+#!/bin/bash
+set -e
+
+echo "Running pre-commit checks..."
+
+echo "Running cargo audit..."
+if ! command -v cargo-audit &> /dev/null; then
+    echo "cargo-audit not found. Installing..."
+    cargo install cargo-audit
+fi
+cargo audit
+
+echo "Running cargo clippy..."
+cargo clippy -- -D warnings
+
+echo "Running Rust tests..."
+cargo test
+
+
+echo "✅ All checks passed! Committing..."

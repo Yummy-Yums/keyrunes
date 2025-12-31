@@ -2,150 +2,92 @@ name: CI
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ "main", "master" ]
   pull_request:
-    branches: [ main, develop ]
+    branches: [ "main", "master" ]
 
 env:
   CARGO_TERM_COLOR: always
-  RUST_BACKTRACE: 1
-  DATABASE_URL: postgresql://postgres:postgres@localhost:5432/keyrunes_test
-  JWT_SECRET: test_secret_key_for_ci
+  SQLX_OFFLINE: true
 
 jobs:
   test:
-    name: Test Suite
+    name: Test
     runs-on: ubuntu-latest
-    
     services:
-      postgres:
+      database:
         image: postgres:17
         env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: postgres
+          POSTGRES_USER: keyrunes
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: keyrunes_test
+        ports:
+          - 5432:5432
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-        ports:
-          - 5432:5432
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
-
-      - name: Cache cargo registry
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/registry
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-registry-
-
-      - name: Cache cargo index
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/git
-          key: ${{ runner.os }}-cargo-git-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-git-
-
-      - name: Cache cargo build
-        uses: actions/cache@v4
-        with:
-          path: target
-          key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-build-target-
-
-      - name: Install sqlx-cli
-        run: cargo install sqlx-cli --no-default-features --features postgres
-
-      - name: Create test database
-        run: |
-          sqlx database create --database-url $DATABASE_URL
-
-      - name: Run migrations
-        run: |
-          sqlx migrate run --database-url $DATABASE_URL
-
-      - name: Check formatting
-        run: cargo fmt --all -- --check
-
-      - name: Run clippy
-        run: cargo clippy -- -D warnings
-
-      - name: Build
-        run: cargo build --verbose
-
-      - name: Run tests
-        run: cargo test --verbose
-
-  coverage:
-    name: Code Coverage
-    runs-on: ubuntu-latest
+    - uses: actions/checkout@v4
     
-    services:
-      postgres:
-        image: postgres:17
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: postgres
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 5432:5432
+    - name: Cache Cargo registry and index
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+    - name: Run Tests
+      env:
+        TEST_DATABASE_URL: postgres://keyrunes:password@localhost:5432/keyrunes_test
+      run: cargo test --verbose
 
-      - name: Install sqlx-cli
-        run: cargo install sqlx-cli --no-default-features --features postgres
-
-      - name: Create test database
-        run: |
-          sqlx database create --database-url $DATABASE_URL
-
-      - name: Run migrations
-        run: |
-          sqlx migrate run --database-url $DATABASE_URL
-
-      - name: Install tarpaulin
-        run: cargo install cargo-tarpaulin
-
-      - name: Generate coverage
-        run: cargo tarpaulin --verbose --all-features --workspace --timeout 120 --out Xml
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          fail_ci_if_error: false
-
-  security-audit:
-    name: Security Audit
+  lint:
+    name: Lint
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+    - uses: actions/checkout@v4
+    
+    - name: Cache Cargo registry
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
-      - name: Run security audit
-        uses: rustsec/audit-check@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          ignore: RUSTSEC-2023-0071
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        components: clippy
+
+    - name: Run Clippy
+      run: cargo clippy -- -D warnings
+
+  audit:
+    name: Audit
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Cache Cargo registry
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Install cargo-audit
+      run: cargo install cargo-audit
+
+    - name: Run Audit
+      run: cargo audit

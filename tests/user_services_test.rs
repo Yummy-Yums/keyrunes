@@ -1,12 +1,15 @@
+mod common;
+
 use anyhow::Result;
 use async_trait::async_trait;
 use chrono::Utc;
+use common::factories::UserFactory;
 use keyrunes::domain::user::{Email, Password};
 use keyrunes::group_service::{CreateGroupRequest, GroupService};
 use keyrunes::repository::{Group, NewUser, Policy, User, UserRepository};
 use keyrunes::services::user_service::{RegisterRequest, UserService};
 use keyrunes::user_service::{CreateUserRequest, SettingsService};
-use keyrunes::{CreateSettings, Settings, SettingsRepository, UserGroup};
+use keyrunes::{CreateSettings, Settings, UserGroup};
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
@@ -21,10 +24,10 @@ fn create_stores() -> (GroupStore, UserGroupStore) {
     let group_store = Arc::new(Mutex::new(Vec::new()));
     let user_group_store = Arc::new(Mutex::new(Vec::new()));
 
-    // seed with admin and user groups
     group_store.lock().unwrap().push(Group {
         group_id: 0,
         external_id: Uuid::new_v4(),
+        organization_id: 1,
         name: "superadmin".to_string(),
         description: Some("Admin group".to_string()),
         created_at: Utc::now(),
@@ -34,6 +37,7 @@ fn create_stores() -> (GroupStore, UserGroupStore) {
     group_store.lock().unwrap().push(Group {
         group_id: 1,
         external_id: Uuid::new_v4(),
+        organization_id: 1,
         name: "users".to_string(),
         description: Some("User group".to_string()),
         created_at: Utc::now(),
@@ -43,7 +47,6 @@ fn create_stores() -> (GroupStore, UserGroupStore) {
     (group_store, user_group_store)
 }
 
-// Mock repository implementation
 struct MockRepo {
     users: Mutex<Vec<User>>,
     group_store: GroupStore,
@@ -82,6 +85,7 @@ impl UserRepository for MockRepo {
         let user = User {
             user_id: (users.len() + 1) as i64,
             external_id: new_user.external_id,
+            organization_id: new_user.organization_id,
             email: new_user.email,
             username: new_user.username,
             password_hash: new_user.password_hash,
@@ -97,6 +101,16 @@ impl UserRepository for MockRepo {
         let mut users = self.users.lock().unwrap();
         if let Some(user) = users.iter_mut().find(|u| u.user_id == user_id) {
             user.password_hash = new_password_hash.to_string();
+            user.updated_at = Utc::now();
+        }
+        Ok(())
+    }
+
+    async fn update_user_profile(&self, user_id: i64, email: &str, username: &str) -> Result<()> {
+        let mut users = self.users.lock().unwrap();
+        if let Some(user) = users.iter_mut().find(|u| u.user_id == user_id) {
+            user.email = email.to_string();
+            user.username = username.to_string();
             user.updated_at = Utc::now();
         }
         Ok(())
@@ -137,7 +151,6 @@ impl UserRepository for MockRepo {
     }
 }
 
-// Mock Group Repository
 struct MockGroupRepository {
     group_store: Store<Group>,
     user_group_store: Store<UserGroup>,
@@ -154,7 +167,7 @@ impl MockGroupRepository {
 
 #[async_trait]
 impl keyrunes::repository::GroupRepository for MockGroupRepository {
-    async fn find_by_name(&self, name: &str) -> Result<Option<Group>> {
+    async fn find_by_name(&self, name: &str, _organization_id: i64) -> Result<Option<Group>> {
         let groups = self.group_store.lock().unwrap();
         let group = groups.iter().cloned().find(|g| g.name == name);
         Ok(group)
@@ -171,6 +184,7 @@ impl keyrunes::repository::GroupRepository for MockGroupRepository {
         let group = Group {
             group_id: groups.len() as i64,
             external_id: new_group.external_id,
+            organization_id: new_group.organization_id,
             name: new_group.name,
             description: new_group.description,
             created_at: Utc::now(),
@@ -180,7 +194,7 @@ impl keyrunes::repository::GroupRepository for MockGroupRepository {
         Ok(group)
     }
 
-    async fn list_groups(&self) -> Result<Vec<Group>> {
+    async fn list_groups(&self, _organization_id: i64) -> Result<Vec<Group>> {
         Ok(self.group_store.lock().unwrap().clone())
     }
 
@@ -211,7 +225,6 @@ impl keyrunes::repository::GroupRepository for MockGroupRepository {
     }
 }
 
-// Mock Settings Repository
 struct MockSettingsRepository {
     settings_store: SettingsStore,
 }
@@ -228,6 +241,7 @@ impl MockSettingsRepository {
 
         settings_store.lock().unwrap().push(Settings {
             settings_id: 0,
+            organization_id: Some(1),
             key: "test_key".to_string(),
             value: "test_value".to_string(),
             description: Some("Test settings".to_string()),
@@ -237,6 +251,7 @@ impl MockSettingsRepository {
 
         settings_store.lock().unwrap().push(Settings {
             settings_id: 1,
+            organization_id: Some(1),
             key: "test_key_1".to_string(),
             value: "test_value_1".to_string(),
             description: Some("Test settings 1".to_string()),
@@ -253,6 +268,7 @@ impl keyrunes::repository::SettingsRepository for MockSettingsRepository {
     async fn create_settings(&self, settings: CreateSettings) -> Result<Option<CreateSettings>> {
         let settings_record = Settings {
             settings_id: 22,
+            organization_id: Some(1),
             key: settings.key.clone(),
             value: settings.value.clone(),
             description: settings.description.clone(),
@@ -275,6 +291,14 @@ impl keyrunes::repository::SettingsRepository for MockSettingsRepository {
             .cloned();
 
         Ok(res)
+    }
+
+    async fn get_setting_by_key_and_org(
+        &self,
+        key: &str,
+        _organization_id: Option<i64>,
+    ) -> Result<Option<Settings>> {
+        self.get_settings_by_key(key).await
     }
 
     async fn get_all_settings(&self) -> Result<Vec<Settings>> {
@@ -310,7 +334,6 @@ impl keyrunes::repository::SettingsRepository for MockSettingsRepository {
     }
 }
 
-// Mock Password Reset Repository
 struct MockPasswordResetRepository;
 
 #[async_trait]
@@ -337,8 +360,6 @@ impl keyrunes::repository::PasswordResetRepository for MockPasswordResetReposito
         Ok(())
     }
 }
-
-// TODO - test the crud  of the settings repo, check for duplication
 
 fn helper_service() -> UserServiceType {
     let (group_store, user_groups_store) = create_stores();
@@ -375,7 +396,7 @@ async fn test_settings_functionality() {
     let service = helper_service();
 
     let test_key = String::from("settings test key");
-    let test_key_update = String::from("settings test key updated");
+    let _test_key_update = String::from("settings test key updated");
     let test_value = String::from("settings test value");
     let test_value_update = String::from("settings test value updated");
     let test_description = String::from("settings test description");
@@ -437,47 +458,58 @@ async fn test_settings_functionality() {
 
 #[tokio::test]
 async fn test_register_and_login() {
+    // Setup
     let service = helper_service();
+    let user_data = UserFactory::build();
 
-    // Create registration request
     let req = RegisterRequest {
-        email: "john@example.com".to_string(),
-        username: "johndoe".to_string(),
+        email: user_data.email.clone(),
+        username: user_data.username.clone(),
         password: "Password123".to_string(),
-        first_login: Some(false), // Added missing field
+        first_login: Some(false),
+        organization_id: None,
     };
 
-    // Test registration
+    // Act
     let auth_response = service.register(req.clone()).await.unwrap();
-    assert_eq!(auth_response.user.email, "john@example.com");
-    assert_eq!(auth_response.user.username, "johndoe");
+
+    // Assert
+    assert_eq!(auth_response.user.email, user_data.email);
+    assert_eq!(auth_response.user.username, user_data.username);
     assert!(!auth_response.token.is_empty());
 
-    // Test login with email
+    // Act
     let login_response = service
-        .login("john@example.com".to_string(), "Password123".to_string())
+        .login(user_data.email.clone(), "Password123".to_string())
         .await
         .unwrap();
-    assert_eq!(login_response.user.username, "johndoe");
+
+    // Assert
+    assert_eq!(login_response.user.username, user_data.username);
     assert!(!login_response.token.is_empty());
 
-    // Test login with username
+    // Act
     let login_response2 = service
-        .login("johndoe".to_string(), "Password123".to_string())
+        .login(user_data.username.clone(), "Password123".to_string())
         .await
         .unwrap();
-    assert_eq!(login_response2.user.email, "john@example.com");
 
-    // Test login with wrong password
+    // Assert
+    assert_eq!(login_response2.user.email, user_data.email);
+
+    // Act
     let err = service
-        .login("johndoe".to_string(), "wrongpass".to_string())
+        .login(user_data.username, "wrongpass".to_string())
         .await
         .unwrap_err();
+
+    // Assert
     assert_eq!(err.to_string(), "invalid credentials");
 }
 
 #[tokio::test]
 async fn test_duplicate_registration() {
+    // Setup
     let (group_store, user_groups_store) = create_stores();
     let user_repo = Arc::new(MockRepo::new(
         Arc::clone(&group_store),
@@ -503,18 +535,20 @@ async fn test_duplicate_registration() {
         None,
     );
 
+    let user_data = UserFactory::build();
     let req = RegisterRequest {
-        email: "duplicate@example.com".to_string(),
-        username: "duplicateuser".to_string(),
+        email: user_data.email.clone(),
+        username: user_data.username.clone(),
         password: "Password123".to_string(),
         first_login: Some(false),
+        organization_id: None,
     };
 
-    // First registration should succeed
+    // Act
     service.register(req.clone()).await.unwrap();
-
-    // Second registration with same email should fail
     let result = service.register(req).await;
+
+    // Assert
     assert!(result.is_err());
     assert!(
         result
@@ -551,15 +585,18 @@ async fn test_password_validation() {
         None,
     );
 
-    // Test password too short
+    // Setup
     let req = RegisterRequest {
         email: "short@example.com".to_string(),
         username: "shortpass".to_string(),
-        password: "short".to_string(), // Too short
+        password: "short".to_string(),
         first_login: Some(false),
+        organization_id: None,
     };
 
     let result = service.register(req).await;
+
+    // Assert
     assert!(result.is_err());
     assert_eq!(result.unwrap_err().to_string(), "password too short");
 }
@@ -591,12 +628,13 @@ async fn test_email_validation() {
         None,
     );
 
-    // Test invalid email
+    // Setup
     let req = RegisterRequest {
-        email: "invalid-email".to_string(), // Invalid email format
+        email: "invalid-email".to_string(),
         username: "testuser".to_string(),
         password: "Password123".to_string(),
         first_login: Some(false),
+        organization_id: None,
     };
 
     let result = service.register(req).await;
@@ -606,43 +644,22 @@ async fn test_email_validation() {
 
 #[tokio::test]
 async fn test_change_password() {
-    let (group_store, user_groups_store) = create_stores();
-    let user_repo = Arc::new(MockRepo::new(
-        Arc::clone(&group_store),
-        Arc::clone(&user_groups_store),
-    ));
-    let group_repo = Arc::new(MockGroupRepository::new(
-        Arc::clone(&group_store),
-        Arc::clone(&user_groups_store),
-    ));
-    let password_reset_repo = Arc::new(MockPasswordResetRepository);
-    let jwt_service = Arc::new(keyrunes::services::jwt_service::JwtService::new(
-        "0123456789ABCDEF0123456789ABCDEF",
-    ));
-    let settings_repo = Arc::new(MockSettingsRepository::new());
-    let settings_service = Arc::new(SettingsService::new(settings_repo));
+    // Setup
+    let service = helper_service();
+    let user_data = UserFactory::build();
 
-    let service = UserService::new(
-        user_repo.clone(),
-        group_repo,
-        password_reset_repo,
-        jwt_service,
-        settings_service,
-        None,
-    );
-
-    // Register a user
     let req = RegisterRequest {
-        email: "change@example.com".to_string(),
-        username: "changeuser".to_string(),
+        email: user_data.email.clone(),
+        username: user_data.username.clone(),
         password: "OldPassword123".to_string(),
         first_login: Some(true),
+        organization_id: None,
     };
 
     let auth_response = service.register(req).await.unwrap();
     let user_id = auth_response.user.user_id;
 
-    // Change password
+    // Act
     let change_req = keyrunes::services::user_service::ChangePasswordRequest {
         current_password: "OldPassword123".to_string(),
         new_password: "NewPassword456".to_string(),
@@ -650,22 +667,18 @@ async fn test_change_password() {
 
     service.change_password(user_id, change_req).await.unwrap();
 
-    // Verify login with new password
+    // Assert
     let login_result = service
-        .login(
-            "change@example.com".to_string(),
-            "NewPassword456".to_string(),
-        )
+        .login(user_data.email.clone(), "NewPassword456".to_string())
         .await;
     assert!(login_result.is_ok());
 
-    // Verify login with old password fails
+    // Act
     let old_login_result = service
-        .login(
-            "change@example.com".to_string(),
-            "OldPassword123".to_string(),
-        )
+        .login(user_data.email, "OldPassword123".to_string())
         .await;
+
+    // Assert
     assert!(old_login_result.is_err());
 }
 
@@ -699,35 +712,36 @@ async fn admin_create_user_with_groups() {
 
     let group_service = GroupService::new(group_repo.clone());
 
-    // Register superadmin
+    // Setup
     let superadmin = service
         .create_user(
             CreateUserRequest {
                 email: Email::try_from("admin@example.com").unwrap(),
                 username: "admin".to_string(),
                 password: Password::try_from("Password123").unwrap(),
-                // Assign to 'superadmin' group by default
                 groups: Some(vec!["superadmin".to_string()]),
                 first_login: false,
+                organization_id: 1,
             },
             None,
         )
         .await
         .unwrap();
 
-    // create group
+    // Act
     let test_group = group_service
         .create_group(CreateGroupRequest {
+            organization_id: 1,
             name: "test".to_string(),
             description: Some("Test Group".to_string()),
         })
         .await
         .unwrap();
 
-    // Assert - group is now 3
+    // Assert
     assert_eq!(group_store.lock().unwrap().len(), 3);
 
-    // create user with test group
+    // Act
     let test_user = service
         .create_user(
             CreateUserRequest {
@@ -736,18 +750,20 @@ async fn admin_create_user_with_groups() {
                 password: Password::try_from("Password123").unwrap(),
                 groups: Some(vec!["users".to_string(), test_group.name]),
                 first_login: false,
+                organization_id: 1,
             },
             Some(superadmin.user_id),
         )
         .await;
+
+    // Assert
     assert!(test_user.is_ok());
     let test_user = test_user.unwrap();
-
     assert_eq!(test_user.email, "testuser@example.com");
     assert_eq!(test_user.username, "testuser");
     assert_eq!(test_user.groups, &["users", "test"]);
 
-    // create user with invalid group
+    // Act
     let test_user = service
         .create_user(
             CreateUserRequest {
@@ -756,10 +772,13 @@ async fn admin_create_user_with_groups() {
                 password: Password::try_from("Password123").unwrap(),
                 groups: Some(vec!["users".to_string(), "invalid".to_string()]),
                 first_login: false,
+                organization_id: 1,
             },
             Some(superadmin.user_id),
         )
         .await;
+
+    // Assert
     assert!(test_user.is_err());
     assert_eq!(
         test_user.err().unwrap().to_string(),

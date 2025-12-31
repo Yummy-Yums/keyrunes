@@ -55,7 +55,6 @@ impl EmailService {
             self.frontend_url, reset_token
         );
 
-        // Render HTML template using Tera
         let mut context = tera::Context::new();
         context.insert("reset_url", &reset_url);
 
@@ -101,7 +100,6 @@ mod tests {
     fn test_email_service_from_env_missing_required() {
         let tera = create_test_tera();
 
-        // This should fail because SMTP_USERNAME and SMTP_PASSWORD are required
         unsafe {
             std::env::remove_var("SMTP_USERNAME");
             std::env::remove_var("SMTP_PASSWORD");
@@ -128,7 +126,6 @@ mod tests {
         assert_eq!(service.from_name, "KeyRunes");
         assert_eq!(service.frontend_url, "http://localhost:3000");
 
-        // Cleanup
         unsafe {
             std::env::remove_var("SMTP_USERNAME");
             std::env::remove_var("SMTP_PASSWORD");

@@ -1,24 +1,24 @@
 {% extends "base.html" %}
 
 {% block content %}
-  <section class="card">
-    <h2>Login</h2>
+<section class="card">
+  <h2>Login</h2>
 
-    {% if error %}
-      <div class="alert alert-danger">{{ error }}</div>
-    {% endif %}
+  {% if error %}
+  <div class="alert alert-danger">{{ error }}</div>
+  {% endif %}
 
-    <form method="post" action="/login" autocomplete="off">
-      <label for="identity">Email ou Username</label>
-      <input id="identity" name="identity" type="text" required />
+  <form method="post" action="/login" autocomplete="off">
+    <label for="identity">Email or Username</label>
+    <input id="identity" name="identity" type="text" required />
 
-      <label for="password">Senha</label>
-      <input id="password" name="password" type="password" required />
+    <label for="password">Password</label>
+    <input id="password" name="password" type="password" required />
 
-      <button type="submit">Entrar</button>
-    </form>
-    <p style="margin-top: 1rem; text-align: center;">
-      <a href="/forgot-password">Esqueci a senha</a>
-    </p>
-  </section>
+    <button type="submit">Login</button>
+  </form>
+  <p style="margin-top: 1rem; text-align: center;">
+    <a href="/forgot-password">Forgot Password?</a>
+  </p>
+</section>
 {% endblock %}

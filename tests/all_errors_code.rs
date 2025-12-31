@@ -1,21 +1,13 @@
-/// Comprehensive integration tests for all HTTP error responses
-///
-/// This module tests that all error responses across the application
-/// return standardized JSON format with proper status codes.
 use axum::{
     Router,
     body::Body,
-    extract::Extension,
     http::{Request, StatusCode},
-    routing::{get, post},
+    routing::get,
 };
 use serde_json::Value;
-use sqlx::postgres::PgPoolOptions;
-use std::sync::Arc;
 use tower::ServiceExt;
 
 mod test_handlers {
-    use super::*;
 
     pub mod error {
         use axum::{
@@ -69,7 +61,6 @@ mod test_handlers {
         }
     }
 
-    // Mock handlers for testing
     pub async fn handler_400() -> impl axum::response::IntoResponse {
         error::ErrorResponse::bad_request("Bad request")
     }
@@ -93,15 +84,6 @@ mod test_handlers {
 
 /// Helper to create test application
 async fn create_test_app() -> Router {
-    let database_url = std::env::var("TEST_DATABASE_URL")
-        .unwrap_or_else(|_| "postgres://postgres:123456@localhost:5432/keyrunes_test".into());
-
-    let pool = PgPoolOptions::new()
-        .max_connections(5)
-        .connect(&database_url)
-        .await
-        .expect("Failed to connect to test database");
-
     Router::new()
         .route("/api/health", get(test_handlers::mock_health))
         .route("/test/400", get(test_handlers::handler_400))
@@ -109,7 +91,6 @@ async fn create_test_app() -> Router {
         .route("/test/403", get(test_handlers::handler_403))
         .route("/test/404", get(test_handlers::handler_404))
         .fallback(test_handlers::handler_404)
-        .layer(Extension(Arc::new(pool)))
 }
 
 /// Helper to verify error response structure
@@ -136,10 +117,11 @@ fn verify_error_structure(json: &Value, expected_code: u16) {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_400_bad_request_returns_json() {
+    // Setup
     let app = create_test_app().await;
 
+    // Act
     let response = app
         .oneshot(
             Request::builder()
@@ -150,22 +132,26 @@ async fn test_400_bad_request_returns_json() {
         .await
         .unwrap();
 
+    // Assert
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 
+    // Act
     let body = axum::body::to_bytes(response.into_body(), usize::MAX)
         .await
         .unwrap();
     let json: Value = serde_json::from_slice(&body).expect("Valid JSON");
 
+    // Assert
     verify_error_structure(&json, 400);
     assert_eq!(json["error"], "Bad Request");
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_401_unauthorized_returns_json() {
+    // Setup
     let app = create_test_app().await;
 
+    // Act
     let response = app
         .oneshot(
             Request::builder()
@@ -176,19 +162,22 @@ async fn test_401_unauthorized_returns_json() {
         .await
         .unwrap();
 
+    // Assert
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 
+    // Act
     let body = axum::body::to_bytes(response.into_body(), usize::MAX)
         .await
         .unwrap();
     let json: Value = serde_json::from_slice(&body).expect("Valid JSON");
 
+    // Assert
     verify_error_structure(&json, 401);
     assert_eq!(json["error"], "Unauthorized");
 }
 
 #[tokio::test]
-#[ignore]
+
 async fn test_403_forbidden_returns_json() {
     let app = create_test_app().await;
 
@@ -214,7 +203,7 @@ async fn test_403_forbidden_returns_json() {
 }
 
 #[tokio::test]
-#[ignore]
+
 async fn test_404_not_found_returns_json() {
     let app = create_test_app().await;
 
@@ -240,7 +229,7 @@ async fn test_404_not_found_returns_json() {
 }
 
 #[tokio::test]
-#[ignore]
+
 async fn test_all_error_codes_have_consistent_structure() {
     let app = create_test_app().await;
 
@@ -276,10 +265,11 @@ async fn test_all_error_codes_have_consistent_structure() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_fallback_404_on_invalid_route() {
+    // Setup
     let app = create_test_app().await;
 
+    // Act
     let response = app
         .oneshot(
             Request::builder()
@@ -290,18 +280,21 @@ async fn test_fallback_404_on_invalid_route() {
         .await
         .unwrap();
 
+    // Assert
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 
+    // Act
     let body = axum::body::to_bytes(response.into_body(), usize::MAX)
         .await
         .unwrap();
     let json: Value = serde_json::from_slice(&body).expect("Valid JSON");
 
+    // Assert
     verify_error_structure(&json, 404);
 }
 
 #[tokio::test]
-#[ignore]
+
 async fn test_error_messages_are_descriptive() {
     let app = create_test_app().await;
 
@@ -326,7 +319,9 @@ async fn test_error_messages_are_descriptive() {
 
         let message = json["message"].as_str().expect("message should be string");
         assert!(
-            message.to_lowercase().contains(expected_substring),
+            message
+                .to_lowercase()
+                .contains(&expected_substring.to_lowercase()),
             "Message '{}' should contain '{}'",
             message,
             expected_substring
@@ -335,7 +330,7 @@ async fn test_error_messages_are_descriptive() {
 }
 
 #[tokio::test]
-#[ignore]
+
 async fn test_errors_dont_leak_sensitive_info() {
     let app = create_test_app().await;
 
@@ -353,7 +348,6 @@ async fn test_errors_dont_leak_sensitive_info() {
             .unwrap();
         let body_str = String::from_utf8(body.to_vec()).unwrap();
 
-        // Should not contain sensitive information
         assert!(!body_str.contains("src/"));
         assert!(!body_str.contains("Backtrace"));
         assert!(!body_str.contains("panic"));
@@ -364,7 +358,7 @@ async fn test_errors_dont_leak_sensitive_info() {
 }
 
 #[tokio::test]
-#[ignore]
+
 async fn test_error_responses_with_different_http_methods() {
     let app = create_test_app().await;
 
@@ -400,7 +394,7 @@ async fn test_error_responses_with_different_http_methods() {
 }
 
 #[tokio::test]
-#[ignore]
+
 async fn test_valid_endpoint_still_works() {
     let app = create_test_app().await;
 
@@ -425,7 +419,7 @@ async fn test_valid_endpoint_still_works() {
 }
 
 #[tokio::test]
-#[ignore]
+
 async fn test_error_content_type_is_json() {
     let app = create_test_app().await;
 

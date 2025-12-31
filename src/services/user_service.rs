@@ -18,15 +18,21 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Serialize)]
+use utoipa::ToSchema;
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct UserResponse {
     pub user_id: i64,
     pub external_id: Uuid,
+    #[schema(example = "user@example.com")]
     pub email: String,
+    #[schema(example = "username")]
     pub username: String,
+    #[serde(skip)]
     pub password_hash: String,
     pub groups: Vec<String>,
     pub first_login: bool,
+    pub organization_id: i64,
 }
 
 fn default_true() -> bool {
@@ -35,6 +41,7 @@ fn default_true() -> bool {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct CreateUserRequest {
+    pub organization_id: i64,
     pub email: Email,
     pub username: String,
     pub password: Password,
@@ -46,13 +53,14 @@ pub struct CreateUserRequest {
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct RegisterRequest {
+    pub organization_id: Option<i64>,
     pub email: String,
     pub username: String,
     pub password: String,
     pub first_login: Option<bool>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct AuthResponse {
     pub user: UserResponse,
     pub token: String,
@@ -124,7 +132,6 @@ impl<U: UserRepository, G: GroupRepository, P: PasswordResetRepository, S: Setti
         req: CreateUserRequest,
         admin_id: Option<i64>,
     ) -> Result<UserResponse> {
-        // Check uniqueness
         if self
             .user_repo
             .find_by_email(req.email.as_ref())
@@ -144,14 +151,14 @@ impl<U: UserRepository, G: GroupRepository, P: PasswordResetRepository, S: Setti
         }
 
         let group_ids = self
-            .resolve_group_ids(req.groups.unwrap_or_default())
+            .resolve_group_ids(req.groups.unwrap_or_default(), req.organization_id)
             .await?;
 
-        // Hash password
         let password_hash = self.hash_password(req.password.expose())?;
 
         let new_user = NewUser {
             external_id: Uuid::new_v4(),
+            organization_id: req.organization_id,
             email: req.email.to_string(),
             username: req.username,
             password_hash,
@@ -164,7 +171,6 @@ impl<U: UserRepository, G: GroupRepository, P: PasswordResetRepository, S: Setti
             .assign_user_to_groups(user.user_id, &group_ids[..], admin_id)
             .await?;
 
-        // Get user groups for JWT
         let groups = self.get_user_group_names(user.user_id).await?;
 
         Ok(UserResponse {
@@ -175,18 +181,18 @@ impl<U: UserRepository, G: GroupRepository, P: PasswordResetRepository, S: Setti
             password_hash: user.password_hash,
             groups,
             first_login: user.first_login,
+            organization_id: user.organization_id,
         })
     }
 
     pub async fn register(&self, req: RegisterRequest) -> Result<AuthResponse> {
-        // creat user
         let user = self
             .create_user(
                 CreateUserRequest {
+                    organization_id: req.organization_id.unwrap_or(1),
                     email: Email::try_from(req.email.as_str())?,
                     username: req.username,
                     password: Password::try_from(req.password.as_str())?,
-                    // Assign to 'users' group by default
                     groups: None,
                     first_login: false,
                 },
@@ -194,7 +200,6 @@ impl<U: UserRepository, G: GroupRepository, P: PasswordResetRepository, S: Setti
             )
             .await?;
 
-        // Generate JWT token
         let token = self.jwt_service.generate_token(
             user.user_id,
             &user.email,
@@ -213,11 +218,16 @@ impl<U: UserRepository, G: GroupRepository, P: PasswordResetRepository, S: Setti
 
     pub async fn login(&self, identity: String, password: String) -> Result<AuthResponse> {
         let email_re = Regex::new(r"^[\w.+-]+@[\w-]+\.[\w.-]+$").unwrap();
+
         let user_opt = if email_re.is_match(&identity) {
             self.user_repo.find_by_email(&identity).await?
         } else {
             self.user_repo.find_by_username(&identity).await?
         };
+
+        if user_opt.is_none() {
+            return Err(anyhow!("invalid credentials"));
+        }
 
         let user = user_opt.ok_or_else(|| anyhow!("invalid credentials"))?;
 
@@ -232,10 +242,8 @@ impl<U: UserRepository, G: GroupRepository, P: PasswordResetRepository, S: Setti
             return Err(anyhow!("invalid credentials"));
         }
 
-        // Get user groups for JWT
         let groups = self.get_user_group_names(user.user_id).await?;
 
-        // Generate JWT token
         let token = self.jwt_service.generate_token(
             user.user_id,
             &user.email,
@@ -252,6 +260,7 @@ impl<U: UserRepository, G: GroupRepository, P: PasswordResetRepository, S: Setti
                 password_hash: user.password_hash,
                 groups,
                 first_login: user.first_login,
+                organization_id: user.organization_id,
             },
             token,
             requires_password_change: user.first_login,
@@ -265,7 +274,6 @@ impl<U: UserRepository, G: GroupRepository, P: PasswordResetRepository, S: Setti
             .await?
             .ok_or_else(|| anyhow!("user not found"))?;
 
-        // Verify current password
         let parsed_hash = PasswordHash::new(&user.password_hash)
             .map_err(|_| anyhow!("invalid stored password hash"))?;
         let argon2 = Argon2::default();
@@ -277,20 +285,28 @@ impl<U: UserRepository, G: GroupRepository, P: PasswordResetRepository, S: Setti
             return Err(anyhow!("current password is incorrect"));
         }
 
-        // Validate new password
         if req.new_password.len() < 8 {
             return Err(anyhow!("new password too short"));
         }
 
-        // Hash new password
         let new_password_hash = self.hash_password(&req.new_password)?;
-
-        // Update password and set first_login to false
         self.user_repo
             .update_user_password(user_id, &new_password_hash)
             .await?;
         self.user_repo.set_first_login(user_id, false).await?;
 
+        Ok(())
+    }
+
+    pub async fn update_user_profile(
+        &self,
+        user_id: i64,
+        email: String,
+        username: String,
+    ) -> Result<()> {
+        self.user_repo
+            .update_user_profile(user_id, &email, &username)
+            .await?;
         Ok(())
     }
 
@@ -301,9 +317,8 @@ impl<U: UserRepository, G: GroupRepository, P: PasswordResetRepository, S: Setti
             .await?
             .ok_or_else(|| anyhow!("email not found"))?;
 
-        // Generate reset token
         let token = self.generate_reset_token()?;
-        let expires_at = Utc::now() + Duration::hours(24); // Token valid for 24 hours
+        let expires_at = Utc::now() + Duration::hours(24);
 
         let reset_token = NewPasswordResetToken {
             user_id: user.user_id,
@@ -327,8 +342,19 @@ impl<U: UserRepository, G: GroupRepository, P: PasswordResetRepository, S: Setti
                 }
             }
         } else {
+            let base_url = match self
+                .settings_service
+                .get_setting_by_key_and_org("BASE_URL", Some(user.organization_id))
+                .await
+            {
+                Ok(Some(s)) => s.value,
+                _ => "http://localhost:3000".to_string(),
+            };
+
+            let reset_link = format!("{}/reset-password?forgot_password={}", base_url, token);
             tracing::warn!(
-                "Email service not configured, password reset token generated but email not sent"
+                "⚠️ Email service not configured. Reset Link: {}",
+                reset_link
             );
         }
 
@@ -342,20 +368,15 @@ impl<U: UserRepository, G: GroupRepository, P: PasswordResetRepository, S: Setti
             .await?
             .ok_or_else(|| anyhow!("invalid or expired token"))?;
 
-        // Validate new password
         if req.new_password.len() < 8 {
             return Err(anyhow!("new password too short"));
         }
 
-        // Hash new password
         let new_password_hash = self.hash_password(&req.new_password)?;
-
-        // Update password
         self.user_repo
             .update_user_password(reset_token.user_id, &new_password_hash)
             .await?;
 
-        // Mark token as used
         self.password_reset_repo
             .mark_token_used(reset_token.token_id)
             .await?;
@@ -365,15 +386,11 @@ impl<U: UserRepository, G: GroupRepository, P: PasswordResetRepository, S: Setti
 
     #[allow(dead_code)]
     pub async fn update_password(&self, req: AdminChangePasswordRequest) -> Result<()> {
-        // Validate new password
         if req.new_password.len() < 8 {
             return Err(anyhow!("new password too short"));
         }
 
-        // Hash new password
         let new_password_hash = self.hash_password(&req.new_password)?;
-
-        // Update password
         self.user_repo
             .update_user_password(req.user_id, &new_password_hash)
             .await?;
@@ -417,6 +434,7 @@ impl<U: UserRepository, G: GroupRepository, P: PasswordResetRepository, S: Setti
             password_hash: user.password_hash,
             groups,
             first_login: user.first_login,
+            organization_id: user.organization_id,
         })
     }
 
@@ -448,8 +466,11 @@ impl<U: UserRepository, G: GroupRepository, P: PasswordResetRepository, S: Setti
         self.password_reset_repo.cleanup_expired_tokens().await
     }
 
-    async fn resolve_group_ids(&self, mut groups: Vec<String>) -> Result<Vec<i64>> {
-        // check if group is empty, if so assign user to `users` group by default
+    async fn resolve_group_ids(
+        &self,
+        mut groups: Vec<String>,
+        organization_id: i64,
+    ) -> Result<Vec<i64>> {
         if groups.is_empty() {
             groups.push("users".to_string());
         }
@@ -457,7 +478,9 @@ impl<U: UserRepository, G: GroupRepository, P: PasswordResetRepository, S: Setti
         let mut group_ids = Vec::new();
 
         for group in groups {
-            if let Ok(Some(users_group)) = self.group_repo.find_by_name(&group).await {
+            if let Ok(Some(users_group)) =
+                self.group_repo.find_by_name(&group, organization_id).await
+            {
                 group_ids.push(users_group.group_id);
             } else {
                 return Err(anyhow!("invalid group specified: `{}`", group));
@@ -493,6 +516,16 @@ impl<S: SettingsRepository> SettingsService<S> {
         Ok(record.unwrap())
     }
 
+    pub async fn get_setting_by_key_and_org(
+        &self,
+        key: &str,
+        organization_id: Option<i64>,
+    ) -> Result<Option<Settings>> {
+        self.settings_repo
+            .get_setting_by_key_and_org(key, organization_id)
+            .await
+    }
+
     pub async fn insert_settings(
         &self,
         key: String,
@@ -507,6 +540,7 @@ impl<S: SettingsRepository> SettingsService<S> {
 
         self.settings_repo
             .create_settings(CreateSettings {
+                organization_id: None,
                 key,
                 value,
                 description: Some(description),
@@ -544,13 +578,15 @@ mod tests {
     use std::sync::Mutex;
     use uuid::Uuid;
 
-    // Mock implementations for testing
+    #[allow(dead_code)]
     struct MockUserRepository {
         users: Mutex<Vec<User>>,
-        groups: Mutex<Vec<(i64, i64)>>, // (user_id, group_id)
+        groups: Mutex<Vec<(i64, i64)>>,
     }
 
+    #[allow(dead_code)]
     impl MockUserRepository {
+        #[allow(dead_code)]
         fn new() -> Self {
             Self {
                 users: Mutex::new(Vec::new()),
@@ -581,6 +617,7 @@ mod tests {
             let user = User {
                 user_id: (users.len() + 1) as i64,
                 external_id: new_user.external_id,
+                organization_id: new_user.organization_id,
                 email: new_user.email,
                 username: new_user.username,
                 password_hash: new_user.password_hash,
@@ -596,6 +633,21 @@ mod tests {
             let mut users = self.users.lock().unwrap();
             if let Some(user) = users.iter_mut().find(|u| u.user_id == user_id) {
                 user.password_hash = new_password_hash.to_string();
+                user.updated_at = Utc::now();
+            }
+            Ok(())
+        }
+
+        async fn update_user_profile(
+            &self,
+            user_id: i64,
+            email: &str,
+            username: &str,
+        ) -> Result<()> {
+            let mut users = self.users.lock().unwrap();
+            if let Some(user) = users.iter_mut().find(|u| u.user_id == user_id) {
+                user.email = email.to_string();
+                user.username = username.to_string();
                 user.updated_at = Utc::now();
             }
             Ok(())
@@ -618,6 +670,7 @@ mod tests {
                 .map(|(_, gid)| Group {
                     group_id: *gid,
                     external_id: Uuid::new_v4(),
+                    organization_id: 1,
                     name: "users".to_string(),
                     description: None,
                     created_at: Utc::now(),
@@ -636,15 +689,18 @@ mod tests {
         }
     }
 
+    #[allow(dead_code)]
     struct MockGroupRepository;
 
+    #[allow(dead_code)]
     #[async_trait]
     impl GroupRepository for MockGroupRepository {
-        async fn find_by_name(&self, name: &str) -> Result<Option<Group>> {
+        async fn find_by_name(&self, name: &str, _organization_id: i64) -> Result<Option<Group>> {
             if name == "users" {
                 Ok(Some(Group {
                     group_id: 1,
                     external_id: Uuid::new_v4(),
+                    organization_id: 1,
                     name: name.to_string(),
                     description: None,
                     created_at: Utc::now(),
@@ -663,7 +719,7 @@ mod tests {
             unimplemented!()
         }
 
-        async fn list_groups(&self) -> Result<Vec<Group>> {
+        async fn list_groups(&self, _organization_id: i64) -> Result<Vec<Group>> {
             Ok(Vec::new())
         }
 
@@ -685,8 +741,10 @@ mod tests {
         }
     }
 
+    #[allow(dead_code)]
     struct MockPasswordResetRepository;
 
+    #[allow(dead_code)]
     #[async_trait]
     impl PasswordResetRepository for MockPasswordResetRepository {
         async fn create_reset_token(
@@ -711,6 +769,4 @@ mod tests {
             Ok(())
         }
     }
-
-    // TODO add tests for Settings Repository
 }

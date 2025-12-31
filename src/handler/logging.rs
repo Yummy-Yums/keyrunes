@@ -17,7 +17,7 @@ pub fn init_logging(level: LogLevel) {
         LogLevel::Info => LevelFilter::INFO,
         LogLevel::Debug => LevelFilter::DEBUG,
         LogLevel::Error => LevelFilter::ERROR,
-        LogLevel::Critical => LevelFilter::ERROR, // Map Critical to ERROR
+        LogLevel::Critical => LevelFilter::ERROR,
     };
 
     tracing_subscriber::fmt()
@@ -40,13 +40,11 @@ pub async fn request_logging_middleware(request: Request, next: Next) -> Respons
 
     let start = Instant::now();
 
-    // Process request
     let response = next.run(request).await;
 
     let duration = start.elapsed();
     let status = response.status();
 
-    // Log the request
     match status.as_u16() {
         200..=299 => {
             tracing::info!(

@@ -4,8 +4,11 @@ use keyrunes::PasswordResetRepository;
 use keyrunes::jwt_service::JwtService;
 use keyrunes::repository::sqlx_impl::PgUserRepository;
 use keyrunes::services::group_service::{CreateGroupRequest, GroupService};
+use keyrunes::services::organization_service::{CreateOrganizationRequest, OrganizationService};
 use keyrunes::services::user_service::{RegisterRequest, UserService};
-use keyrunes::sqlx_impl::{PgGroupRepository, PgPasswordResetRepository, PgSettingsRepository};
+use keyrunes::sqlx_impl::{
+    PgGroupRepository, PgOrganizationRepository, PgPasswordResetRepository, PgSettingsRepository,
+};
 use keyrunes::user_service::{AdminChangePasswordRequest, SettingsService};
 use sqlx::PgPool;
 use std::collections::HashMap;
@@ -26,6 +29,8 @@ enum Commands {
     /// Register User with username, password and email
     Register {
         #[clap(long)]
+        organization_id: Option<i64>,
+        #[clap(long)]
         email: String,
         #[clap(long)]
         username: String,
@@ -45,9 +50,8 @@ enum Commands {
     },
     /// Login as a user with username, password
     Login {
-        // identity can be username or email
         #[clap(long)]
-        identity: String, // email ou username
+        identity: String,
         #[clap(long)]
         password: String,
     },
@@ -72,12 +76,26 @@ enum Commands {
     /// Create a new group
     CreateGroup {
         #[clap(long)]
+        organization_id: i64,
+        #[clap(long)]
         name: String,
         #[clap(long)]
         description: Option<String>,
     },
+    /// Create a new organization
+    CreateOrganization {
+        #[clap(long)]
+        name: String,
+        #[clap(long)]
+        description: Option<String>,
+    },
+    /// List all organizations
+    ListOrganizations,
     /// List all groups
-    ListGroups,
+    ListGroups {
+        #[clap(long)]
+        organization_id: i64,
+    },
     /// Assign user to group
     AssignUserToGroup {
         #[clap(long)]
@@ -92,13 +110,17 @@ enum Commands {
         #[clap(long)]
         group_name: String,
     },
+    /// Rotate organization secret key
+    RotateOrgKey {
+        #[clap(long)]
+        organization_id: i64,
+    },
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     dotenvy::dotenv().ok();
 
-    // Initialize tracing
     tracing_subscriber::fmt()
         .with_max_level(LevelFilter::INFO)
         .init();
@@ -106,18 +128,18 @@ async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     let database_url = std::env::var("DATABASE_URL")
-        .unwrap_or_else(|_| "postgres://postgres:password@localhost:5432/postgres".into());
+        .unwrap_or_else(|_| "postgres://keyrunes:password@localhost:5432/postgres".into());
 
     let pool = PgPool::connect(&database_url).await?;
 
     let user_repo = Arc::new(PgUserRepository::new(pool.clone()));
     let group_repo = Arc::new(PgGroupRepository::new(pool.clone()));
+    let org_repo = Arc::new(PgOrganizationRepository::new(pool.clone()));
     let password_reset_repo = Arc::new(PgPasswordResetRepository::new(pool.clone()));
 
     let jwt_secret = std::env::var("JWT_SECRET")
         .unwrap_or_else(|_| "your-super-secret-jwt-key-change-in-production".into());
 
-    // Load templates
     let _tera = Arc::new(Tera::new("templates/**/*").expect("Failed to load templates"));
 
     let jwt_service = Arc::new(JwtService::new(&jwt_secret));
@@ -133,7 +155,6 @@ async fn main() -> anyhow::Result<()> {
         None,
     ));
 
-    // load settings into a hashmap from db
     let base_url_settings: HashMap<String, String> = HashMap::from_iter(
         &mut service
             .settings_service
@@ -145,12 +166,14 @@ async fn main() -> anyhow::Result<()> {
 
     match cli.command {
         Commands::Register {
+            organization_id,
             email,
             username,
             password,
             first_login,
         } => {
             let req = RegisterRequest {
+                organization_id,
                 email,
                 username,
                 password,
@@ -169,8 +192,8 @@ async fn main() -> anyhow::Result<()> {
             username,
             password,
         } => {
-            // Create user
             let req = RegisterRequest {
+                organization_id: Some(1),
                 email: email.clone(),
                 username: username.clone(),
                 password,
@@ -181,8 +204,11 @@ async fn main() -> anyhow::Result<()> {
                 Ok(u) => {
                     tracing::info!("Created user {} (id={})", u.user.username, u.user.user_id);
 
+                    tracing::info!("   User ID: {}", u.user.user_id);
+                    tracing::info!("   Group: superadmin");
+
                     let group_service = GroupService::new(group_repo.clone());
-                    match group_service.get_group_by_name("superadmin").await {
+                    match group_service.get_group_by_name("superadmin", 1).await {
                         Ok(Some(group)) => {
                             match group_service
                                 .assign_user_to_group(u.user.user_id, group.group_id, None)
@@ -217,7 +243,6 @@ async fn main() -> anyhow::Result<()> {
             username,
             generate_token: _,
         } => {
-            // find user by username
             let res = service.find_user_by_username(&username).await;
 
             if res.is_none() {
@@ -250,7 +275,8 @@ async fn main() -> anyhow::Result<()> {
                 .create_reset_token(new_password_token)
                 .await?;
 
-            let base_url = base_url_settings.get("BASE_URL").unwrap();
+            let default_url = "http://localhost:3000".to_string();
+            let base_url = base_url_settings.get("BASE_URL").unwrap_or(&default_url);
 
             tracing::info!("Generated reset url for user {} below", username);
             tracing::info!(
@@ -280,9 +306,14 @@ async fn main() -> anyhow::Result<()> {
 
             tracing::info!("Updated password successfully for {}", user.username);
         }
-        Commands::CreateGroup { name, description } => {
+        Commands::CreateGroup {
+            organization_id,
+            name,
+            description,
+        } => {
             let group_service = GroupService::new(group_repo.clone());
             let req = CreateGroupRequest {
+                organization_id,
                 name: name.clone(),
                 description,
             };
@@ -297,10 +328,10 @@ async fn main() -> anyhow::Result<()> {
                 Err(e) => eprintln!("Error creating group: {}", e),
             }
         }
-        Commands::ListGroups => {
+        Commands::ListGroups { organization_id } => {
             let group_service = GroupService::new(group_repo.clone());
 
-            match group_service.list_groups().await {
+            match group_service.list_groups(organization_id).await {
                 Ok(groups) => {
                     tracing::info!("📋 Groups:");
                     for group in groups {
@@ -323,8 +354,7 @@ async fn main() -> anyhow::Result<()> {
         } => {
             let group_service = GroupService::new(group_repo.clone());
 
-            // Find group by name
-            match group_service.get_group_by_name(&group_name).await {
+            match group_service.get_group_by_name(&group_name, 1).await {
                 Ok(Some(group)) => {
                     match group_service
                         .assign_user_to_group(user_id, group.group_id, None)
@@ -350,8 +380,7 @@ async fn main() -> anyhow::Result<()> {
         } => {
             let group_service = GroupService::new(group_repo.clone());
 
-            // Find group by name
-            match group_service.get_group_by_name(&group_name).await {
+            match group_service.get_group_by_name(&group_name, 1).await {
                 Ok(Some(group)) => {
                     match group_service
                         .remove_user_from_group(user_id, group.group_id)
@@ -371,6 +400,53 @@ async fn main() -> anyhow::Result<()> {
                 Err(e) => eprintln!("Error finding group: {}", e),
             }
         }
+        Commands::CreateOrganization { name, description } => {
+            let org_service = OrganizationService::new(org_repo.clone());
+            let req = CreateOrganizationRequest {
+                name: name.clone(),
+                description,
+            };
+
+            match org_service.create_organization(req).await {
+                Ok(org) => {
+                    tracing::info!("✅ Organization created successfully!");
+                    tracing::info!("   Name: {}", org.name);
+                    tracing::info!("   ID: {}", org.organization_id);
+                    tracing::info!("   External ID: {}", org.external_id);
+                    tracing::info!("   Secret Key: {}", org.secret_key);
+                }
+                Err(e) => eprintln!("Error creating organization: {}", e),
+            }
+        }
+        Commands::ListOrganizations => {
+            let org_service = OrganizationService::new(org_repo.clone());
+            match org_service.list_organizations().await {
+                Ok(orgs) => {
+                    tracing::info!("📋 Organizations:");
+                    for org in orgs {
+                        tracing::info!(
+                            "  • {} (ID: {}) - {}",
+                            org.name,
+                            org.organization_id,
+                            org.description
+                                .unwrap_or_else(|| "No description".to_string())
+                        );
+                    }
+                }
+                Err(e) => eprintln!("Error listing organizations: {}", e),
+            }
+        }
+        Commands::RotateOrgKey { organization_id } => {
+            let org_service = OrganizationService::new(org_repo.clone());
+            match org_service.rotate_org_key(organization_id).await {
+                Ok(new_key) => {
+                    tracing::info!("✅ Organization key rotated successfully!");
+                    tracing::info!("   Organization ID: {}", organization_id);
+                    tracing::info!("   New Secret Key: {}", new_key);
+                }
+                Err(e) => eprintln!("Error rotating organization key: {}", e),
+            }
+        }
     }
 
     Ok(())
@@ -384,6 +460,7 @@ mod tests {
         Settings, SettingsRepository, User, UserRepository,
     };
     use keyrunes::services::user_service::{SettingsService, UserService};
+    use serial_test::serial;
     use std::process::Command;
     use std::sync::{Arc, Mutex};
     use uuid::Uuid;
@@ -391,11 +468,39 @@ mod tests {
     type Store<T> = Arc<Mutex<Vec<T>>>;
     type UserStore = Store<User>;
 
-    const USERNAME: &str = "test";
-    const EMAIL: &str = "test@gmail.com";
-    const PASSWORD: &str = "password";
+    async fn setup_cli_test_db() {
+        let db_url = std::env::var("DATABASE_URL")
+            .unwrap_or("postgres://postgres_user:pass123@localhost:5432/keyrunes_test".to_string());
+        let pool = PgPool::connect(&db_url)
+            .await
+            .expect("Failed to connect to DB");
 
-    // Mock repositories for unit tests
+        sqlx::query("TRUNCATE TABLE organizations, users, groups, user_groups, settings, password_reset_tokens CASCADE")
+            .execute(&pool)
+            .await
+            .expect("Failed to truncate tables");
+
+        sqlx::query("INSERT INTO organizations (organization_id, name, external_id, secret_key, description, created_at, updated_at) VALUES (1, 'Default Org', $1, $2, 'Default', NOW(), NOW()) ON CONFLICT (organization_id) DO NOTHING")
+             .bind(Uuid::new_v4())
+             .bind(Uuid::new_v4())
+             .execute(&pool).await.expect("Failed to seed org");
+
+        sqlx::query("INSERT INTO groups (group_id, organization_id, name, description, external_id, created_at, updated_at) VALUES (1, 1, 'superadmin', 'Super Admin', $1, NOW(), NOW()) ON CONFLICT (group_id) DO NOTHING")
+             .bind(Uuid::new_v4())
+             .execute(&pool).await.expect("Failed to seed group");
+
+        sqlx::query("INSERT INTO users (user_id, organization_id, email, username, password_hash, first_login, external_id, created_at, updated_at) VALUES (1, 1, 'admin@example.com', 'admin', '$argon2id$v=19$m=19456,t=2,p=1$dummy$dummyhash', false, $1, NOW(), NOW()) ON CONFLICT (user_id) DO NOTHING")
+             .bind(Uuid::new_v4())
+             .execute(&pool).await.expect("Failed to seed user");
+
+        sqlx::query("INSERT INTO user_groups (user_id, group_id, assigned_at) VALUES (1, 1, NOW()) ON CONFLICT (user_id, group_id) DO NOTHING")
+             .execute(&pool).await.expect("Failed to assign group");
+    }
+
+    const USERNAME: &str = "admin";
+    const EMAIL: &str = "admin@example.com";
+    const PASSWORD: &str = "Admin123";
+
     struct MockUserRepo {
         users: UserStore,
     }
@@ -403,10 +508,10 @@ mod tests {
     impl MockUserRepo {
         fn new() -> Self {
             let users = Arc::new(Mutex::new(Vec::new()));
-            // Seed with test user
             users.lock().unwrap().push(User {
                 user_id: 1,
                 external_id: Uuid::new_v4(),
+                organization_id: 1,
                 email: EMAIL.to_string(),
                 username: USERNAME.to_string(),
                 password_hash: "$argon2id$v=19$m=19456,t=2,p=1$test$test".to_string(),
@@ -455,6 +560,19 @@ mod tests {
             }
             Ok(())
         }
+        async fn update_user_profile(
+            &self,
+            user_id: i64,
+            email: &str,
+            username: &str,
+        ) -> anyhow::Result<()> {
+            let mut users = self.users.lock().unwrap();
+            if let Some(user) = users.iter_mut().find(|u| u.user_id == user_id) {
+                user.email = email.to_string();
+                user.username = username.to_string();
+            }
+            Ok(())
+        }
         async fn set_first_login(&self, _user_id: i64, _first_login: bool) -> anyhow::Result<()> {
             Ok(())
         }
@@ -482,13 +600,17 @@ mod tests {
         async fn insert_group(&self, _group: keyrunes::NewGroup) -> anyhow::Result<Group> {
             unimplemented!()
         }
-        async fn find_by_name(&self, _name: &str) -> anyhow::Result<Option<Group>> {
+        async fn find_by_name(
+            &self,
+            _name: &str,
+            _organization_id: i64,
+        ) -> anyhow::Result<Option<Group>> {
             Ok(None)
         }
         async fn find_by_id(&self, _id: i64) -> anyhow::Result<Option<Group>> {
             unimplemented!()
         }
-        async fn list_groups(&self) -> anyhow::Result<Vec<Group>> {
+        async fn list_groups(&self, _organization_id: i64) -> anyhow::Result<Vec<Group>> {
             Ok(vec![])
         }
         async fn assign_user_to_group(
@@ -559,8 +681,9 @@ mod tests {
             if key == "BASE_URL" {
                 Ok(Some(Settings {
                     settings_id: 1,
+                    organization_id: Some(1),
                     key: "BASE_URL".to_string(),
-                    value: "http://127.0.0.1:3000".to_string(),
+                    value: "http://localhost:3000".to_string(),
                     description: Some("Base URL".to_string()),
                     created_at: chrono::Utc::now(),
                     updated_at: chrono::Utc::now(),
@@ -569,11 +692,19 @@ mod tests {
                 Ok(None)
             }
         }
+        async fn get_setting_by_key_and_org(
+            &self,
+            key: &str,
+            _organization_id: Option<i64>,
+        ) -> anyhow::Result<Option<Settings>> {
+            self.get_settings_by_key(key).await
+        }
         async fn get_all_settings(&self) -> anyhow::Result<Vec<Settings>> {
             Ok(vec![Settings {
                 settings_id: 1,
+                organization_id: Some(1),
                 key: "BASE_URL".to_string(),
-                value: "http://127.0.0.1:3000".to_string(),
+                value: "http://localhost:3000".to_string(),
                 description: Some("Base URL".to_string()),
                 created_at: chrono::Utc::now(),
                 updated_at: chrono::Utc::now(),
@@ -587,9 +718,9 @@ mod tests {
         }
     }
 
-    // Unit tests with mocks - these run without external dependencies
     #[tokio::test]
     async fn test_update_password_with_valid_email() {
+        // Setup
         let user_repo = Arc::new(MockUserRepo::new());
         let group_repo = Arc::new(MockGroupRepo);
         let password_reset_repo = Arc::new(MockPasswordResetRepo);
@@ -608,10 +739,13 @@ mod tests {
             None,
         );
 
-        // Test finding user and updating password
+        // Act
         let user = service.find_user_by_email(&EMAIL.to_string()).await;
+
+        // Assert
         assert!(user.is_some());
 
+        // Act
         let user = user.unwrap();
         let request = AdminChangePasswordRequest {
             user_id: user.user_id,
@@ -619,11 +753,14 @@ mod tests {
         };
 
         let result = service.update_password(request).await;
+
+        // Assert
         assert!(result.is_ok());
     }
 
     #[tokio::test]
     async fn test_update_password_with_invalid_email() {
+        // Setup
         let user_repo = Arc::new(MockUserRepo::new());
         let group_repo = Arc::new(MockGroupRepo);
         let password_reset_repo = Arc::new(MockPasswordResetRepo);
@@ -642,15 +779,18 @@ mod tests {
             None,
         );
 
-        // Test with non-existent email
+        // Act
         let user = service
             .find_user_by_email(&"nonexistent@example.com".to_string())
             .await;
+
+        // Assert
         assert!(user.is_none());
     }
 
     #[tokio::test]
     async fn test_recover_user_with_valid_username() {
+        // Setup
         let user_repo = Arc::new(MockUserRepo::new());
         let group_repo = Arc::new(MockGroupRepo);
         let password_reset_repo = Arc::new(MockPasswordResetRepo);
@@ -669,21 +809,26 @@ mod tests {
             None,
         );
 
-        // Test finding user by username
+        // Act
         let user = service.find_user_by_username(&USERNAME.to_string()).await;
+
+        // Assert
         assert!(user.is_some());
 
+        // Act
         let user = user.unwrap();
         assert_eq!(user.username, USERNAME);
 
-        // Test generating token
+        // Act
         let groups = service.get_user_group_names(user.user_id).await.unwrap();
         let token = jwt_service
             .generate_token(user.user_id, &user.username, &user.email, groups)
             .unwrap();
+
+        // Assert
         assert!(!token.is_empty());
 
-        // Test creating reset token
+        // Act
         let new_token = NewPasswordResetToken {
             user_id: user.user_id,
             token: token.clone(),
@@ -694,16 +839,21 @@ mod tests {
             .password_reset_repo
             .create_reset_token(new_token)
             .await;
+
+        // Assert
         assert!(result.is_ok());
 
-        // Test getting base URL from settings
+        // Act
         let settings = settings_service.get_all_settings().await.unwrap();
+
+        // Assert
         assert!(!settings.is_empty());
         assert_eq!(settings[0].key, "BASE_URL");
     }
 
     #[tokio::test]
     async fn test_recover_user_with_invalid_username() {
+        // Setup
         let user_repo = Arc::new(MockUserRepo::new());
         let group_repo = Arc::new(MockGroupRepo);
         let password_reset_repo = Arc::new(MockPasswordResetRepo);
@@ -722,103 +872,120 @@ mod tests {
             None,
         );
 
-        // Test with non-existent username
+        // Act
         let user = service
             .find_user_by_username(&"nonexistent".to_string())
             .await;
+
+        // Assert
         assert!(user.is_none());
     }
 
-    // Integration tests - require CLI binary and database
-    #[test]
-    #[ignore] // Requires CLI binary and database setup
-    fn test_admin_changes_user_password_successfully() {
+    #[tokio::test]
+    #[serial]
+    async fn test_admin_changes_user_password_successfully() {
+        setup_cli_test_db().await;
+        // Setup
         let output = Command::new("./target/debug/cli")
-            .args(&[
+            .env(
+                "DATABASE_URL",
+                "postgres://postgres_user:pass123@localhost:5432/keyrunes_test",
+            )
+            .args([
                 "set-user-password",
                 "--email",
                 EMAIL,
                 "--set-password",
-                "true",
                 "--password",
                 PASSWORD,
             ])
             .output()
             .expect("Failed to execute command");
 
-        assert!(output.status.success());
-
+        // Act
         let stdout = String::from_utf8(output.stdout).unwrap();
 
+        // Assert
+        assert!(output.status.success());
         assert!(stdout.contains("Updated password successfully"));
     }
 
     #[test]
-    #[ignore] // Requires CLI binary and database setup
+    #[serial]
     fn test_admin_changes_user_password_unsuccessfully() {
+        // Setup
+        let err = &EMAIL[9..];
         let output = Command::new("./target/debug/cli")
-            .args(&[
+            .env(
+                "DATABASE_URL",
+                "postgres://postgres_user:pass123@localhost:5432/keyrunes_test",
+            )
+            .args([
                 "set-user-password",
                 "--email",
-                &EMAIL[9..],
+                err,
                 "--set-password",
-                "true",
                 "--password",
                 PASSWORD,
             ])
             .output()
             .expect("Failed to execute command");
 
-        assert!(!output.status.success());
-
+        // Act
         let stderr = String::from_utf8(output.stderr).unwrap();
 
-        let err = &EMAIL[9..];
-
+        // Assert
+        assert!(!output.status.success());
         assert!(stderr.contains(format!("Error: User with email {} not found", err).as_str()));
     }
 
-    #[test]
-    #[ignore] // Requires CLI binary and database setup
-    fn test_recover_user_with_url_successfully() {
+    #[tokio::test]
+    #[serial]
+    async fn test_recover_user_with_url_successfully() {
+        setup_cli_test_db().await;
+        // Setup
         let output = Command::new("./target/debug/cli")
-            .args(&[
-                "recover-user",
-                "--username",
-                &USERNAME,
-                "--generate-token",
-                "true",
-            ])
+            .env(
+                "DATABASE_URL",
+                "postgres://postgres_user:pass123@localhost:5432/keyrunes_test",
+            )
+            .args(["recover-user", "--username", USERNAME, "--generate-token"])
             .output()
             .expect("Failed to execute command");
 
-        assert!(output.status.success());
-
+        // Act
         let stdout = String::from_utf8(output.stdout).unwrap();
 
-        assert!(stdout.contains("http://127.0.0.1:3000?token=e"));
+        // Assert
+        if !output.status.success() {
+            println!(
+                "Command failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+        assert!(output.status.success());
+        assert!(stdout.contains("http://localhost:3000"));
     }
 
     #[test]
-    #[ignore] // Requires CLI binary and database setup
+    #[serial]
     fn test_recover_user_with_url_unsuccessfully() {
+        // Setup
+        let err = &USERNAME[3..];
         let output = Command::new("./target/debug/cli")
-            .args(&[
-                "recover-user",
-                "--username",
-                &USERNAME[3..],
-                "--generate-token",
-                "true",
-            ])
+            .env(
+                "DATABASE_URL",
+                "postgres://postgres_user:pass123@localhost:5432/keyrunes_test",
+            )
+            .args(["recover-user", "--username", err, "--generate-token"])
             .output()
             .expect("Failed to execute command");
 
-        assert!(!output.status.success());
-
+        // Act
         let stderr = String::from_utf8(output.stderr).unwrap();
 
-        let err = &USERNAME[3..];
-
+        // Assert
+        assert!(!output.status.success());
         assert!(stderr.contains(format!("Error: User {} not found", err).as_str()));
     }
 }

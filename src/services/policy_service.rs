@@ -8,6 +8,7 @@ use uuid::Uuid;
 #[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct CreatePolicyRequest {
+    pub organization_id: i64,
     pub name: String,
     pub description: Option<String>,
     pub resource: String,
@@ -57,12 +58,15 @@ impl<P: PolicyRepository> PolicyService<P> {
     }
 
     pub async fn create_policy(&self, req: CreatePolicyRequest) -> Result<Policy> {
-        // Check if policy already exists
-        if self.repo.find_by_name(&req.name).await?.is_some() {
+        if self
+            .repo
+            .find_by_name(&req.name, req.organization_id)
+            .await?
+            .is_some()
+        {
             return Err(anyhow!("policy name already exists"));
         }
 
-        // Validate resource and action
         if req.resource.is_empty() {
             return Err(anyhow!("resource cannot be empty"));
         }
@@ -72,6 +76,7 @@ impl<P: PolicyRepository> PolicyService<P> {
 
         let new_policy = NewPolicy {
             external_id: Uuid::new_v4(),
+            organization_id: req.organization_id,
             name: req.name,
             description: req.description,
             resource: req.resource,
@@ -83,16 +88,20 @@ impl<P: PolicyRepository> PolicyService<P> {
         self.repo.insert_policy(new_policy).await
     }
 
-    pub async fn get_policy_by_name(&self, name: &str) -> Result<Option<Policy>> {
-        self.repo.find_by_name(name).await
+    pub async fn get_policy_by_name(
+        &self,
+        name: &str,
+        organization_id: i64,
+    ) -> Result<Option<Policy>> {
+        self.repo.find_by_name(name, organization_id).await
     }
 
     pub async fn get_policy_by_id(&self, policy_id: i64) -> Result<Option<Policy>> {
         self.repo.find_by_id(policy_id).await
     }
 
-    pub async fn list_policies(&self) -> Result<Vec<Policy>> {
-        self.repo.list_policies().await
+    pub async fn list_policies(&self, organization_id: i64) -> Result<Vec<Policy>> {
+        self.repo.list_policies(organization_id).await
     }
 
     pub async fn assign_policy_to_user(
@@ -101,7 +110,6 @@ impl<P: PolicyRepository> PolicyService<P> {
         policy_id: i64,
         assigned_by: Option<i64>,
     ) -> Result<()> {
-        // Verify policy exists
         if self.repo.find_by_id(policy_id).await?.is_none() {
             return Err(anyhow!("policy not found"));
         }
@@ -117,7 +125,6 @@ impl<P: PolicyRepository> PolicyService<P> {
         policy_id: i64,
         assigned_by: Option<i64>,
     ) -> Result<()> {
-        // Verify policy exists
         if self.repo.find_by_id(policy_id).await?.is_none() {
             return Err(anyhow!("policy not found"));
         }
@@ -156,13 +163,11 @@ impl<P: PolicyRepository> PolicyService<P> {
             }
         }
 
-        // Deny takes precedence over allow
         allow && !deny
     }
 
     fn matches_policy(&self, policy: &Policy, resource: &str, action: &str) -> bool {
         let resource_match = policy.resource == "*" || policy.resource == resource || {
-            // Check for wildcard patterns like "user:*"
             if policy.resource.ends_with("*") {
                 let prefix = &policy.resource[..policy.resource.len() - 1];
                 resource.starts_with(prefix)
@@ -183,14 +188,14 @@ mod tests {
     use crate::repository::{Policy, PolicyEffect};
     use anyhow::Result;
     use async_trait::async_trait;
-    use chrono::{DateTime, Utc};
+    use chrono::Utc;
     use std::sync::{Arc, Mutex};
     use uuid::Uuid;
 
     struct MockPolicyRepository {
         policies: Mutex<Vec<Policy>>,
-        user_policies: Mutex<Vec<(i64, i64)>>, // (user_id, policy_id)
-        group_policies: Mutex<Vec<(i64, i64)>>, // (group_id, policy_id)
+        user_policies: Mutex<Vec<(i64, i64)>>,
+        group_policies: Mutex<Vec<(i64, i64)>>,
     }
 
     impl MockPolicyRepository {
@@ -205,7 +210,7 @@ mod tests {
 
     #[async_trait]
     impl PolicyRepository for MockPolicyRepository {
-        async fn find_by_name(&self, name: &str) -> Result<Option<Policy>> {
+        async fn find_by_name(&self, name: &str, _organization_id: i64) -> Result<Option<Policy>> {
             let policies = self.policies.lock().unwrap();
             Ok(policies.iter().find(|p| p.name == name).cloned())
         }
@@ -220,6 +225,7 @@ mod tests {
             let policy = Policy {
                 policy_id: (policies.len() + 1) as i64,
                 external_id: new_policy.external_id,
+                organization_id: new_policy.organization_id,
                 name: new_policy.name,
                 description: new_policy.description,
                 resource: new_policy.resource,
@@ -233,7 +239,7 @@ mod tests {
             Ok(policy)
         }
 
-        async fn list_policies(&self) -> Result<Vec<Policy>> {
+        async fn list_policies(&self, _organization_id: i64) -> Result<Vec<Policy>> {
             let policies = self.policies.lock().unwrap();
             Ok(policies.clone())
         }
@@ -279,6 +285,7 @@ mod tests {
         let service = PolicyService::new(repo);
 
         let req = CreatePolicyRequest {
+            organization_id: 1,
             name: "test_policy".to_string(),
             description: Some("Test policy".to_string()),
             resource: "user:*".to_string(),
@@ -303,6 +310,7 @@ mod tests {
             Policy {
                 policy_id: 1,
                 external_id: Uuid::new_v4(),
+                organization_id: 1,
                 name: "allow_read".to_string(),
                 description: None,
                 resource: "user:*".to_string(),
@@ -315,6 +323,7 @@ mod tests {
             Policy {
                 policy_id: 2,
                 external_id: Uuid::new_v4(),
+                organization_id: 1,
                 name: "deny_delete".to_string(),
                 description: None,
                 resource: "*".to_string(),
@@ -326,21 +335,18 @@ mod tests {
             },
         ];
 
-        // Should allow read on user resource
         assert!(
             service
                 .evaluate_permission(&policies, "user:123", "read")
                 .await
         );
 
-        // Should deny delete on any resource
         assert!(
             !service
                 .evaluate_permission(&policies, "user:123", "delete")
                 .await
         );
 
-        // Should not allow write (no matching policy)
         assert!(
             !service
                 .evaluate_permission(&policies, "user:123", "write")
@@ -356,6 +362,7 @@ mod tests {
         let policy = Policy {
             policy_id: 1,
             external_id: Uuid::new_v4(),
+            organization_id: 1,
             name: "wildcard_policy".to_string(),
             description: None,
             resource: "api:*".to_string(),
@@ -366,11 +373,9 @@ mod tests {
             updated_at: Utc::now(),
         };
 
-        // Should match resource with wildcard
         assert!(service.matches_policy(&policy, "api:users", "read"));
         assert!(service.matches_policy(&policy, "api:admin", "write"));
 
-        // Should not match different resource
         assert!(!service.matches_policy(&policy, "database:users", "read"));
     }
 }

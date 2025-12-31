@@ -1,0 +1,31 @@
+services:
+  database:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: keyrunes
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: keyrunes_test
+    ports:
+      - 5432
+
+pipeline:
+  test:
+    image: rust:latest
+    environment:
+      TEST_DATABASE_URL: postgres://keyrunes:password@database:5432/keyrunes_test
+      SQLX_OFFLINE: true
+    commands:
+      - cargo --version
+      - cargo test --verbose
+  lint:
+    image: rust:latest
+    environment:
+      SQLX_OFFLINE: true
+    commands:
+      - rustup component add clippy
+      - cargo clippy -- -D warnings
+  audit:
+    image: rust:latest
+    commands:
+      - cargo install cargo-audit
+      - cargo audit

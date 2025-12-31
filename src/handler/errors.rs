@@ -80,12 +80,10 @@ pub async fn handler_404(req: Request) -> impl IntoResponse {
     let path = uri.path();
     let headers = req.headers().clone();
 
-    // API routes always return JSON
     if is_api_route(path) || wants_json(&headers) {
         return ErrorResponse::not_found("The requested resource was not found").into_response();
     }
 
-    // Browser requests get HTML 404 page
     let html = r#"
 <!DOCTYPE html>
 <html lang="en">
@@ -234,19 +232,15 @@ mod tests {
         let response = handler_404(req).await.into_response();
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
 
-        // Test 400 handler
         let response = handler_400().await.into_response();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 
-        // Test 401 handler
         let response = handler_401().await.into_response();
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 
-        // Test 403 handler
         let response = handler_403().await.into_response();
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
 
-        // Test 500 handler
         let response = handler_500().await.into_response();
         assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
     }

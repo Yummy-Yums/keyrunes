@@ -11,56 +11,63 @@ use crate::repository::sqlx_impl::{
     PgGroupRepository, PgPasswordResetRepository, PgSettingsRepository, PgUserRepository,
 };
 use crate::services::user_service::{
-    ChangePasswordRequest, ForgotPasswordRequest, RegisterRequest, ResetPasswordRequest,
-    UserService,
+    AuthResponse, ChangePasswordRequest, ForgotPasswordRequest, RegisterRequest,
+    ResetPasswordRequest, UserResponse, UserService,
 };
+use utoipa::ToSchema;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct RegisterApi {
+    #[schema(example = "user@example.com")]
     pub email: String,
+    #[schema(example = "username")]
     pub username: String,
+    #[schema(example = "password123")]
     pub password: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct LoginApi {
+    #[schema(example = "username_or_email")]
     pub identity: String,
+    #[schema(example = "password123")]
     pub password: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct RefreshTokenRequest {
     pub token: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct RefreshTokenResponse {
     pub token: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct ForgotPasswordApi {
+    #[schema(example = "user@example.com")]
     pub email: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct ForgotPasswordResponse {
     pub message: String,
     pub reset_url: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct ResetPasswordQuery {
     pub forgot_password: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct ResetPasswordApi {
     pub token: String,
     pub new_password: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct MessageResponse {
     pub message: String,
 }
@@ -73,11 +80,22 @@ type UserServiceType = UserService<
 >;
 
 /// POST /api/register
+#[utoipa::path(
+    post,
+    path = "/api/register",
+    request_body = RegisterApi,
+    responses(
+        (status = 201, description = "User registered successfully", body = AuthResponse),
+        (status = 400, description = "Bad Request (e.g., email already exists)")
+    ),
+    tag = "auth"
+)]
 pub async fn register_api(
     Extension(service): Extension<Arc<UserServiceType>>,
     Json(payload): Json<RegisterApi>,
 ) -> impl IntoResponse {
     let req = RegisterRequest {
+        organization_id: None,
         email: payload.email,
         username: payload.username,
         password: payload.password,
@@ -91,6 +109,16 @@ pub async fn register_api(
 }
 
 /// POST /api/login
+#[utoipa::path(
+    post,
+    path = "/api/login",
+    request_body = LoginApi,
+    responses(
+        (status = 200, description = "Login successful", body = AuthResponse),
+        (status = 401, description = "Unauthorized")
+    ),
+    tag = "auth"
+)]
 pub async fn login_api(
     Extension(service): Extension<Arc<UserServiceType>>,
     Json(payload): Json<LoginApi>,
@@ -102,6 +130,16 @@ pub async fn login_api(
 }
 
 /// POST /api/refresh-token
+#[utoipa::path(
+    post,
+    path = "/api/refresh-token",
+    request_body = RefreshTokenRequest,
+    responses(
+        (status = 200, description = "Token refreshed successfully", body = RefreshTokenResponse),
+        (status = 401, description = "Invalid or expired token")
+    ),
+    tag = "auth"
+)]
 pub async fn refresh_token_api(
     Extension(service): Extension<Arc<UserServiceType>>,
     Json(payload): Json<RefreshTokenRequest>,
@@ -117,6 +155,18 @@ pub async fn refresh_token_api(
 }
 
 /// GET /api/me - Get current user info from JWT token
+#[utoipa::path(
+    get,
+    path = "/api/me",
+    responses(
+        (status = 200, description = "Current user info", body = UserResponse),
+        (status = 401, description = "Unauthorized")
+    ),
+    security(
+        ("bearer_auth" = [])
+    ),
+    tag = "auth"
+)]
 pub async fn me_api(
     Extension(service): Extension<Arc<UserServiceType>>,
     headers: HeaderMap,
@@ -166,6 +216,16 @@ pub async fn change_password_api(
 }
 
 /// POST /api/forgot-password
+#[utoipa::path(
+    post,
+    path = "/api/forgot-password",
+    request_body = ForgotPasswordApi,
+    responses(
+        (status = 200, description = "Request password reset", body = ForgotPasswordResponse),
+        (status = 400, description = "Bad Request (e.g., email not found)")
+    ),
+    tag = "auth"
+)]
 pub async fn forgot_password_api(
     Extension(service): Extension<Arc<UserServiceType>>,
     Json(payload): Json<ForgotPasswordApi>,
@@ -176,17 +236,13 @@ pub async fn forgot_password_api(
 
     match service.forgot_password(req).await {
         Ok(token) => {
-            let reset_url = format!(
-                "{}?forgot_password={}",
-                std::env::var("FRONTEND_URL")
-                    .unwrap_or_else(|_| "http://localhost:3000/reset-password".to_string()),
-                token
-            );
+            let reset_url = format!("?forgot_password={}", token);
 
             (
                 StatusCode::OK,
                 Json(ForgotPasswordResponse {
-                    message: "Password reset email sent".to_string(),
+                    message: "If the email is registered, you will receive a reset link."
+                        .to_string(),
                     reset_url,
                 }),
             )
@@ -215,6 +271,16 @@ pub async fn reset_password_page(
 }
 
 /// POST /api/reset-password
+#[utoipa::path(
+    post,
+    path = "/api/reset-password",
+    request_body = ResetPasswordApi,
+    responses(
+        (status = 200, description = "Reset password", body = MessageResponse),
+        (status = 400, description = "Bad Request (e.g., invalid token)")
+    ),
+    tag = "auth"
+)]
 pub async fn reset_password_api(
     Extension(service): Extension<Arc<UserServiceType>>,
     Json(payload): Json<ResetPasswordApi>,
@@ -236,12 +302,29 @@ pub async fn reset_password_api(
     }
 }
 
-/// Helper function to extract Bearer token from Authorization header
-fn extract_bearer_token(headers: &HeaderMap) -> Option<String> {
-    let auth_header = headers.get("authorization")?;
-    let auth_str = auth_header.to_str().ok()?;
+pub fn extract_bearer_token(headers: &HeaderMap) -> Option<String> {
+    if let Some(auth_header) = headers.get("authorization")
+        && let Ok(auth_str) = auth_header.to_str()
+        && auth_str.starts_with("Bearer ")
+        && auth_str.len() > 7
+    {
+        return Some(auth_str[7..].to_string());
+    }
 
-    auth_str.strip_prefix("Bearer ").map(|s| s.to_string())
+    if let Some(cookie_header) = headers.get("cookie")
+        && let Ok(cookie_str) = cookie_header.to_str()
+    {
+        for cookie in cookie_str.split(';') {
+            let cookie = cookie.trim();
+            if let Some(token_value) = cookie.strip_prefix("jwt_token=")
+                && !token_value.is_empty()
+            {
+                return Some(token_value.to_string());
+            }
+        }
+    }
+
+    None
 }
 
 #[cfg(test)]
@@ -272,6 +355,18 @@ mod tests {
 
         let token = extract_bearer_token(&headers);
         assert_eq!(token, None);
+    }
+
+    #[test]
+    fn test_extract_bearer_token_from_cookie() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "cookie",
+            HeaderValue::from_static("jwt_token=cookie_token; other=value"),
+        );
+
+        let token = extract_bearer_token(&headers);
+        assert_eq!(token, Some("cookie_token".to_string()));
     }
 
     #[test]

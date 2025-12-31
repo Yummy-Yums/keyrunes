@@ -10,7 +10,6 @@ pub async fn admin_page(
     Extension(user): Extension<AuthenticatedUser>,
     Extension(tera): Extension<Tera>,
 ) -> impl IntoResponse {
-    // Check if user is superadmin
     if !user.groups.contains(&"superadmin".to_string()) {
         return Html("<h1>403 Forbidden</h1><p>Superadmin access required</p>".to_string())
             .into_response();

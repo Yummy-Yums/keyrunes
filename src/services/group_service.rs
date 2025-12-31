@@ -6,6 +6,7 @@ use uuid::Uuid;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct CreateGroupRequest {
+    pub organization_id: i64,
     pub name: String,
     pub description: Option<String>,
 }
@@ -41,13 +42,18 @@ impl<G: GroupRepository> GroupService<G> {
     }
 
     pub async fn create_group(&self, req: CreateGroupRequest) -> Result<Group> {
-        // Check if group already exists
-        if self.repo.find_by_name(&req.name).await?.is_some() {
+        if self
+            .repo
+            .find_by_name(&req.name, req.organization_id)
+            .await?
+            .is_some()
+        {
             return Err(anyhow!("group name already exists"));
         }
 
         let new_group = NewGroup {
             external_id: Uuid::new_v4(),
+            organization_id: req.organization_id,
             name: req.name,
             description: req.description,
         };
@@ -56,8 +62,12 @@ impl<G: GroupRepository> GroupService<G> {
     }
 
     #[allow(dead_code)]
-    pub async fn get_group_by_name(&self, name: &str) -> Result<Option<Group>> {
-        self.repo.find_by_name(name).await
+    pub async fn get_group_by_name(
+        &self,
+        name: &str,
+        organization_id: i64,
+    ) -> Result<Option<Group>> {
+        self.repo.find_by_name(name, organization_id).await
     }
 
     #[allow(dead_code)]
@@ -65,8 +75,8 @@ impl<G: GroupRepository> GroupService<G> {
         self.repo.find_by_id(group_id).await
     }
 
-    pub async fn list_groups(&self) -> Result<Vec<Group>> {
-        self.repo.list_groups().await
+    pub async fn list_groups(&self, organization_id: i64) -> Result<Vec<Group>> {
+        self.repo.list_groups(organization_id).await
     }
 
     #[allow(dead_code)]
@@ -106,7 +116,6 @@ impl<G: GroupRepository> GroupService<G> {
         group_id: i64,
         assigned_by: Option<i64>,
     ) -> Result<()> {
-        // Verify group exists
         if self.repo.find_by_id(group_id).await?.is_none() {
             return Err(anyhow!("group not found"));
         }
@@ -132,7 +141,7 @@ mod tests {
 
     struct MockGroupRepository {
         groups: Mutex<Vec<Group>>,
-        user_groups: Mutex<Vec<(i64, i64)>>, // (user_id, group_id)
+        user_groups: Mutex<Vec<(i64, i64)>>,
     }
 
     impl MockGroupRepository {
@@ -146,9 +155,12 @@ mod tests {
 
     #[async_trait]
     impl GroupRepository for MockGroupRepository {
-        async fn find_by_name(&self, name: &str) -> Result<Option<Group>> {
+        async fn find_by_name(&self, name: &str, organization_id: i64) -> Result<Option<Group>> {
             let groups = self.groups.lock().unwrap();
-            Ok(groups.iter().find(|g| g.name == name).cloned())
+            Ok(groups
+                .iter()
+                .find(|g| g.name == name && g.organization_id == organization_id)
+                .cloned())
         }
 
         async fn find_by_id(&self, group_id: i64) -> Result<Option<Group>> {
@@ -161,6 +173,7 @@ mod tests {
             let group = Group {
                 group_id: (groups.len() + 1) as i64,
                 external_id: new_group.external_id,
+                organization_id: new_group.organization_id,
                 name: new_group.name,
                 description: new_group.description,
                 created_at: Utc::now(),
@@ -170,9 +183,13 @@ mod tests {
             Ok(group)
         }
 
-        async fn list_groups(&self) -> Result<Vec<Group>> {
+        async fn list_groups(&self, organization_id: i64) -> Result<Vec<Group>> {
             let groups = self.groups.lock().unwrap();
-            Ok(groups.clone())
+            Ok(groups
+                .iter()
+                .filter(|g| g.organization_id == organization_id)
+                .cloned()
+                .collect())
         }
 
         async fn assign_user_to_group(
@@ -203,12 +220,14 @@ mod tests {
         let service = GroupService::new(repo);
 
         let req = CreateGroupRequest {
+            organization_id: 1,
             name: "test_group".to_string(),
             description: Some("Test group description".to_string()),
         };
 
         let group = service.create_group(req).await.unwrap();
         assert_eq!(group.name, "test_group");
+        assert_eq!(group.organization_id, 1);
         assert_eq!(
             group.description,
             Some("Test group description".to_string())
@@ -221,14 +240,13 @@ mod tests {
         let service = GroupService::new(repo);
 
         let req = CreateGroupRequest {
+            organization_id: 1,
             name: "duplicate_group".to_string(),
             description: None,
         };
 
-        // Create first group
         service.create_group(req.clone()).await.unwrap();
 
-        // Try to create duplicate
         let result = service.create_group(req).await;
         assert!(result.is_err());
         assert_eq!(result.unwrap_err().to_string(), "group name already exists");

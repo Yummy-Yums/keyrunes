@@ -59,6 +59,7 @@ pub async fn register_post(
     Form(payload): Form<RegisterForm>,
 ) -> impl IntoResponse {
     let req = RegisterRequest {
+        organization_id: None,
         email: payload.email,
         username: payload.username,
         password: payload.password,
@@ -67,16 +68,30 @@ pub async fn register_post(
 
     match service.register(req).await {
         Ok(auth_response) => {
-            // Store JWT token in a cookie or redirect with success message
             let mut ctx = Context::new();
             ctx.insert("title", "Registration Successful");
             ctx.insert("user", &auth_response.user);
             ctx.insert("token", &auth_response.token);
 
+            let cookie_value = format!(
+                "jwt_token={}; Path=/; HttpOnly; SameSite=Strict",
+                auth_response.token
+            );
+            let mut headers = HeaderMap::new();
+            headers.insert(
+                axum::http::header::SET_COOKIE,
+                axum::http::HeaderValue::from_str(&cookie_value).unwrap(),
+            );
+
             if auth_response.requires_password_change {
-                return Redirect::to("/change-password").into_response();
+                return (
+                    StatusCode::SEE_OTHER,
+                    headers,
+                    Redirect::to("/change-password"),
+                )
+                    .into_response();
             }
-            Redirect::to("/dashboard").into_response()
+            (StatusCode::SEE_OTHER, headers, Redirect::to("/dashboard")).into_response()
         }
         Err(e) => {
             let mut ctx = Context::new();
@@ -104,21 +119,26 @@ pub async fn login_post(
 ) -> impl IntoResponse {
     match service.login(payload.identity, payload.password).await {
         Ok(auth_response) => {
+            let cookie_value = format!(
+                "jwt_token={}; Path=/; HttpOnly; SameSite=Lax; Max-Age=3600",
+                auth_response.token
+            );
+            let mut headers = HeaderMap::new();
+            headers.insert(
+                axum::http::header::SET_COOKIE,
+                axum::http::HeaderValue::from_str(&cookie_value).unwrap(),
+            );
+
             if auth_response.requires_password_change {
-                let mut ctx = Context::new();
-                ctx.insert("title", "Change Password Required");
-                ctx.insert("user", &auth_response.user);
-                ctx.insert("token", &auth_response.token);
-                let body = tmpl.render("change_password.html", &ctx).unwrap();
-                return (StatusCode::OK, Html(body)).into_response();
+                return (
+                    StatusCode::SEE_OTHER,
+                    headers,
+                    Redirect::to("/change-password"),
+                )
+                    .into_response();
             }
 
-            let mut ctx = Context::new();
-            ctx.insert("title", "Dashboard");
-            ctx.insert("user", &auth_response.user);
-            ctx.insert("token", &auth_response.token);
-            let body = tmpl.render("dashboard.html", &ctx).unwrap();
-            (StatusCode::OK, Html(body)).into_response()
+            (StatusCode::SEE_OTHER, headers, Redirect::to("/dashboard")).into_response()
         }
         Err(e) => {
             let mut ctx = Context::new();
@@ -232,6 +252,87 @@ pub async fn forgot_password_page(Extension(tmpl): Extension<tera::Tera>) -> imp
     }
 }
 
+/// GET /profile
+pub async fn profile_page(
+    Extension(service): Extension<Arc<UserServiceType>>,
+    Extension(tmpl): Extension<tera::Tera>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
+    let token = match extract_bearer_token_from_cookie_or_header(&headers) {
+        Some(token) => token,
+        None => return Redirect::to("/login").into_response(),
+    };
+
+    match service.get_user_by_token(&token).await {
+        Ok(user) => {
+            let mut ctx = Context::new();
+            ctx.insert("title", "Edit Profile");
+            ctx.insert("user", &user);
+            match tmpl.render("profile.html", &ctx) {
+                Ok(body) => Html(body).into_response(),
+                Err(e) => (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("Template error: {}", e),
+                )
+                    .into_response(),
+            }
+        }
+        Err(_) => Redirect::to("/login").into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+pub struct ProfileForm {
+    pub username: String,
+    pub email: String,
+}
+
+/// POST /profile
+pub async fn profile_post(
+    Extension(service): Extension<Arc<UserServiceType>>,
+    Extension(tmpl): Extension<tera::Tera>,
+    headers: HeaderMap,
+    Form(payload): Form<ProfileForm>,
+) -> impl IntoResponse {
+    let token = match extract_bearer_token_from_cookie_or_header(&headers) {
+        Some(token) => token,
+        None => return Redirect::to("/login").into_response(),
+    };
+
+    let user_id = match service.jwt_service.extract_user_id(&token) {
+        Ok(id) => id,
+        Err(_) => return Redirect::to("/login").into_response(),
+    };
+
+    match service
+        .update_user_profile(user_id, payload.email, payload.username)
+        .await
+    {
+        Ok(_) => match service.get_user_by_token(&token).await {
+            Ok(user) => {
+                let mut ctx = Context::new();
+                ctx.insert("title", "Edit Profile");
+                ctx.insert("user", &user);
+                ctx.insert("success", "Profile updated successfully");
+                let body = tmpl.render("profile.html", &ctx).unwrap();
+                Html(body).into_response()
+            }
+            Err(_) => Redirect::to("/login").into_response(),
+        },
+        Err(e) => match service.get_user_by_token(&token).await {
+            Ok(user) => {
+                let mut ctx = Context::new();
+                ctx.insert("title", "Edit Profile");
+                ctx.insert("user", &user);
+                ctx.insert("error", &format!("Failed to update profile: {}", e));
+                let body = tmpl.render("profile.html", &ctx).unwrap();
+                (StatusCode::BAD_REQUEST, Html(body)).into_response()
+            }
+            Err(_) => Redirect::to("/login").into_response(),
+        },
+    }
+}
+
 /// GET /reset-password?forgot_password=TOKEN
 pub async fn reset_password_page(
     Extension(tmpl): Extension<tera::Tera>,
@@ -251,11 +352,7 @@ pub async fn reset_password_page(
     }
 }
 
-/// Helper function to extract Bearer token from Authorization header or cookies
-///
-/// FIXED: Properly handles cookie parsing without panicking
 fn extract_bearer_token_from_cookie_or_header(headers: &HeaderMap) -> Option<String> {
-    // First try Authorization header
     if let Some(auth_header) = headers.get("authorization")
         && let Ok(auth_str) = auth_header.to_str()
         && auth_str.starts_with("Bearer ")
@@ -264,20 +361,15 @@ fn extract_bearer_token_from_cookie_or_header(headers: &HeaderMap) -> Option<Str
         return Some(auth_str[7..].to_string());
     }
 
-    // Then try cookies
     if let Some(cookie_header) = headers.get("cookie")
         && let Ok(cookie_str) = cookie_header.to_str()
     {
-        // Parse cookies safely
         for cookie in cookie_str.split(';') {
             let cookie = cookie.trim();
-
-            // Check if this is a jwt_token cookie
-            if let Some(token_value) = cookie.strip_prefix("jwt_token=") {
-                // Only return if there's actually a value
-                if !token_value.is_empty() {
-                    return Some(token_value.to_string());
-                }
+            if let Some(token_value) = cookie.strip_prefix("jwt_token=")
+                && !token_value.is_empty()
+            {
+                return Some(token_value.to_string());
             }
         }
     }

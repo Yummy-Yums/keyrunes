@@ -10,7 +10,10 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use crate::handler::errors::ErrorResponse;
+use crate::repository::sqlx_impl::PgOrganizationRepository;
 use crate::services::jwt_service::{Claims, JwtService};
+use crate::services::organization_service::OrganizationService;
+use uuid::Uuid;
 
 #[allow(dead_code)]
 #[derive(Clone)]
@@ -117,11 +120,71 @@ pub async fn require_superadmin(
     }
 }
 
+use crate::domain::organization::Organization;
+
+#[derive(Clone)]
+pub enum ApiAuthContext {
+    Organization(Organization),
+    Superadmin(AuthenticatedUser),
+}
+
+/// Middleware that requires X-Organization-Key header OR superadmin permissions
+pub async fn require_org_key_or_superadmin(
+    Extension(org_service): Extension<Arc<OrganizationService<PgOrganizationRepository>>>,
+    Extension(jwt_service): Extension<Arc<JwtService>>,
+    headers: HeaderMap,
+    mut request: Request,
+    next: Next,
+) -> Response {
+    if let Some(key) = headers.get("X-Organization-Key") {
+        let api_key = match key.to_str() {
+            Ok(k) => k,
+            Err(_) => return ErrorResponse::unauthorized("Invalid API Key format").into_response(),
+        };
+
+        let secret_key = match Uuid::parse_str(api_key) {
+            Ok(uuid) => uuid,
+            Err(_) => {
+                return ErrorResponse::unauthorized("Invalid API Key format (must be UUID)")
+                    .into_response();
+            }
+        };
+
+        return match org_service.get_organization_by_secret_key(secret_key).await {
+            Ok(Some(org)) => {
+                request
+                    .extensions_mut()
+                    .insert(ApiAuthContext::Organization(org));
+                next.run(request).await
+            }
+            Ok(None) => ErrorResponse::unauthorized("Invalid API Key").into_response(),
+            Err(e) => {
+                tracing::error!("Database error extracting org key: {:?}", e);
+                ErrorResponse::internal_server_error("Internal server error").into_response()
+            }
+        };
+    }
+
+    if let Some(token) = extract_bearer_token(&headers)
+        && let Ok(claims) = jwt_service.verify_token(&token)
+    {
+        let user = AuthenticatedUser::from(claims);
+        if user.groups.contains(&"superadmin".to_string()) {
+            request
+                .extensions_mut()
+                .insert(ApiAuthContext::Superadmin(user));
+            return next.run(request).await;
+        }
+    }
+
+    ErrorResponse::unauthorized("Missing X-Organization-Key header or valid Superadmin token")
+        .into_response()
+}
+
 /// Extract Bearer token from Authorization header or cookies
 ///
 /// FIXED: Safe cookie parsing using strip_prefix instead of direct indexing
 fn extract_bearer_token(headers: &HeaderMap) -> Option<String> {
-    // First try Authorization header
     if let Some(auth_header) = headers.get("authorization")
         && let Ok(auth_str) = auth_header.to_str()
         && auth_str.starts_with("Bearer ")
@@ -130,19 +193,16 @@ fn extract_bearer_token(headers: &HeaderMap) -> Option<String> {
         return Some(auth_str[7..].to_string());
     }
 
-    // Then try cookies - SAFE PARSING
     if let Some(cookie_header) = headers.get("cookie")
         && let Ok(cookie_str) = cookie_header.to_str()
     {
         for cookie in cookie_str.split(';') {
             let cookie = cookie.trim();
 
-            // Use strip_prefix instead of direct indexing
-            if let Some(token_value) = cookie.strip_prefix("jwt_token=") {
-                // Only return if there's actually a value
-                if !token_value.is_empty() {
-                    return Some(token_value.to_string());
-                }
+            if let Some(token_value) = cookie.strip_prefix("jwt_token=")
+                && !token_value.is_empty()
+            {
+                return Some(token_value.to_string());
             }
         }
     }

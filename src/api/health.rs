@@ -5,7 +5,9 @@ use serde::Serialize;
 use sqlx::{PgPool, Row};
 use std::time::SystemTime;
 
-#[derive(Serialize)]
+use utoipa::ToSchema;
+
+#[derive(Serialize, ToSchema)]
 pub struct HealthResponse {
     pub status: String,
     pub timestamp: String,
@@ -15,14 +17,14 @@ pub struct HealthResponse {
     pub services: ServicesHealth,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct DatabaseHealth {
     pub status: String,
     pub response_time_ms: Option<u64>,
     pub active_connections: Option<i32>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct ServicesHealth {
     pub jwt_service: String,
     pub password_hashing: String,
@@ -34,7 +36,15 @@ pub fn init_health_check() {
     START_TIME.set(SystemTime::now()).ok();
 }
 
-// GET /api/health - Health check endpoint
+#[utoipa::path(
+    get,
+    path = "/api/health",
+    responses(
+        (status = 200, description = "System is healthy", body = HealthResponse),
+        (status = 503, description = "System is unhealthy", body = HealthResponse)
+    ),
+    tag = "health"
+)]
 pub async fn health_check(Extension(pool): Extension<PgPool>) -> impl IntoResponse {
     let start_time = START_TIME.get().copied().unwrap_or_else(SystemTime::now);
     let uptime = SystemTime::now()
@@ -42,13 +52,10 @@ pub async fn health_check(Extension(pool): Extension<PgPool>) -> impl IntoRespon
         .unwrap_or_default()
         .as_secs();
 
-    // Check database health
     let db_health = check_database_health(&pool).await;
 
-    // Check other services
     let services_health = check_services_health();
 
-    // Determine overall status
     let overall_status = if db_health.status == "healthy"
         && services_health.jwt_service == "healthy"
         && services_health.password_hashing == "healthy"
@@ -76,7 +83,6 @@ pub async fn health_check(Extension(pool): Extension<PgPool>) -> impl IntoRespon
     (status_code, Json(response))
 }
 
-// GET /api/health/ready - Readiness probe
 pub async fn readiness_check(Extension(pool): Extension<PgPool>) -> impl IntoResponse {
     let db_result = sqlx::query("SELECT 1 as health_check")
         .fetch_one(&pool)
@@ -101,7 +107,6 @@ pub async fn readiness_check(Extension(pool): Extension<PgPool>) -> impl IntoRes
     }
 }
 
-// GET /api/health/live - Liveness probe
 pub async fn liveness_check() -> impl IntoResponse {
     (
         StatusCode::OK,
@@ -143,13 +148,11 @@ async fn check_database_health(pool: &PgPool) -> DatabaseHealth {
 }
 
 fn check_services_health() -> ServicesHealth {
-    // Test JWT service
     let jwt_status = match test_jwt_service() {
         Ok(_) => "healthy",
         Err(_) => "unhealthy",
     };
 
-    // Test password hashing
     let password_status = match test_password_hashing() {
         Ok(_) => "healthy",
         Err(_) => "unhealthy",
@@ -161,7 +164,6 @@ fn check_services_health() -> ServicesHealth {
     }
 }
 
-// Made public for tests
 pub fn test_jwt_service() -> Result<(), Box<dyn std::error::Error>> {
     use crate::services::jwt_service::JwtService;
 
@@ -171,7 +173,6 @@ pub fn test_jwt_service() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-// Made public for tests
 pub fn test_password_hashing() -> Result<(), Box<dyn std::error::Error>> {
     use argon2::{Argon2, password_hash::PasswordHasher};
     use password_hash::{PasswordHash, PasswordVerifier, SaltString};

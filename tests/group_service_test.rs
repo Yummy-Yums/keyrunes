@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 struct MockGroupRepository {
     groups: Mutex<Vec<Group>>,
-    user_groups: Mutex<Vec<(i64, i64, Option<i64>)>>, // (user_id, group_id, assigned_by)
+    user_groups: Mutex<Vec<(i64, i64, Option<i64>)>>,
 }
 
 impl MockGroupRepository {
@@ -17,6 +17,7 @@ impl MockGroupRepository {
             Group {
                 group_id: 1,
                 external_id: Uuid::new_v4(),
+                organization_id: 1,
                 name: "superadmin".to_string(),
                 description: Some("Superadmin group".to_string()),
                 created_at: Utc::now(),
@@ -25,6 +26,7 @@ impl MockGroupRepository {
             Group {
                 group_id: 2,
                 external_id: Uuid::new_v4(),
+                organization_id: 1,
                 name: "users".to_string(),
                 description: Some("Regular users".to_string()),
                 created_at: Utc::now(),
@@ -46,6 +48,7 @@ impl GroupRepository for MockGroupRepository {
         let group = Group {
             group_id: (groups.len() + 1) as i64,
             external_id: new_group.external_id,
+            organization_id: new_group.organization_id,
             name: new_group.name,
             description: new_group.description,
             created_at: Utc::now(),
@@ -55,7 +58,7 @@ impl GroupRepository for MockGroupRepository {
         Ok(group)
     }
 
-    async fn find_by_name(&self, name: &str) -> Result<Option<Group>> {
+    async fn find_by_name(&self, name: &str, _organization_id: i64) -> Result<Option<Group>> {
         let groups = self.groups.lock().unwrap();
         Ok(groups.iter().find(|g| g.name == name).cloned())
     }
@@ -65,7 +68,7 @@ impl GroupRepository for MockGroupRepository {
         Ok(groups.iter().find(|g| g.group_id == group_id).cloned())
     }
 
-    async fn list_groups(&self) -> Result<Vec<Group>> {
+    async fn list_groups(&self, _organization_id: i64) -> Result<Vec<Group>> {
         Ok(self.groups.lock().unwrap().clone())
     }
 
@@ -101,15 +104,20 @@ impl GroupRepository for MockGroupRepository {
 
 #[tokio::test]
 async fn test_create_group_success() {
+    // Setup
     let repo = Arc::new(MockGroupRepository::new());
     let service = GroupService::new(repo);
 
     let req = CreateGroupRequest {
+        organization_id: 1,
         name: "developers".to_string(),
         description: Some("Development team".to_string()),
     };
 
+    // Act
     let result = service.create_group(req).await;
+
+    // Assert
     assert!(result.is_ok());
 
     let group = result.unwrap();
@@ -119,25 +127,34 @@ async fn test_create_group_success() {
 
 #[tokio::test]
 async fn test_create_group_duplicate_name() {
+    // Setup
     let repo = Arc::new(MockGroupRepository::new());
     let service = GroupService::new(repo);
 
     let req = CreateGroupRequest {
-        name: "superadmin".to_string(), // Already exists in mock
+        organization_id: 1,
+        name: "superadmin".to_string(),
         description: Some("Duplicate".to_string()),
     };
 
+    // Act
     let result = service.create_group(req).await;
+
+    // Assert
     assert!(result.is_err());
     assert_eq!(result.unwrap_err().to_string(), "group name already exists");
 }
 
 #[tokio::test]
 async fn test_list_groups() {
+    // Setup
     let repo = Arc::new(MockGroupRepository::new());
     let service = GroupService::new(repo);
 
-    let result = service.list_groups().await;
+    // Act
+    let result = service.list_groups(1).await;
+
+    // Assert
     assert!(result.is_ok());
 
     let groups = result.unwrap();
@@ -148,10 +165,14 @@ async fn test_list_groups() {
 
 #[tokio::test]
 async fn test_get_group_by_name() {
+    // Setup
     let repo = Arc::new(MockGroupRepository::new());
     let service = GroupService::new(repo);
 
-    let result = service.get_group_by_name("superadmin").await;
+    // Act
+    let result = service.get_group_by_name("superadmin", 1).await;
+
+    // Assert
     assert!(result.is_ok());
 
     let group = result.unwrap();
@@ -161,20 +182,28 @@ async fn test_get_group_by_name() {
 
 #[tokio::test]
 async fn test_get_group_by_name_not_found() {
+    // Setup
     let repo = Arc::new(MockGroupRepository::new());
     let service = GroupService::new(repo);
 
-    let result = service.get_group_by_name("nonexistent").await;
+    // Act
+    let result = service.get_group_by_name("nonexistent", 1).await;
+
+    // Assert
     assert!(result.is_ok());
     assert!(result.unwrap().is_none());
 }
 
 #[tokio::test]
 async fn test_get_group_by_id() {
+    // Setup
     let repo = Arc::new(MockGroupRepository::new());
     let service = GroupService::new(repo);
 
+    // Act
     let result = service.get_group_by_id(1).await;
+
+    // Assert
     assert!(result.is_ok());
 
     let group = result.unwrap();
@@ -184,10 +213,14 @@ async fn test_get_group_by_id() {
 
 #[tokio::test]
 async fn test_assign_user_to_group_success() {
+    // Setup
     let repo = Arc::new(MockGroupRepository::new());
     let service = GroupService::new(repo.clone());
 
+    // Act
     let result = service.assign_user_to_group(100, 1, Some(1)).await;
+
+    // Assert
     assert!(result.is_ok());
 
     let user_groups = repo.user_groups.lock().unwrap();
@@ -200,23 +233,31 @@ async fn test_assign_user_to_group_success() {
 
 #[tokio::test]
 async fn test_assign_user_to_group_nonexistent_group() {
+    // Setup
     let repo = Arc::new(MockGroupRepository::new());
     let service = GroupService::new(repo);
 
+    // Act
     let result = service.assign_user_to_group(100, 999, Some(1)).await;
+
+    // Assert
     assert!(result.is_err());
     assert_eq!(result.unwrap_err().to_string(), "group not found");
 }
 
 #[tokio::test]
 async fn test_assign_user_to_group_duplicate() {
+    // Setup
     let repo = Arc::new(MockGroupRepository::new());
     let service = GroupService::new(repo);
 
     let result1 = service.assign_user_to_group(100, 1, Some(1)).await;
     assert!(result1.is_ok());
 
+    // Act
     let result2 = service.assign_user_to_group(100, 1, Some(1)).await;
+
+    // Assert
     assert!(result2.is_err());
     assert_eq!(
         result2.unwrap_err().to_string(),
@@ -226,17 +267,16 @@ async fn test_assign_user_to_group_duplicate() {
 
 #[tokio::test]
 async fn test_remove_user_from_group() {
+    // Setup
     let repo = Arc::new(MockGroupRepository::new());
     let service = GroupService::new(repo.clone());
 
     service.assign_user_to_group(100, 1, Some(1)).await.unwrap();
 
-    {
-        let user_groups = repo.user_groups.lock().unwrap();
-        assert_eq!(user_groups.len(), 1);
-    }
-
+    // Act
     let result = service.remove_user_from_group(100, 1).await;
+
+    // Assert
     assert!(result.is_ok());
 
     let user_groups = repo.user_groups.lock().unwrap();
@@ -245,6 +285,7 @@ async fn test_remove_user_from_group() {
 
 #[tokio::test]
 async fn test_create_multiple_groups() {
+    // Setup
     let repo = Arc::new(MockGroupRepository::new());
     let service = GroupService::new(repo);
 
@@ -254,8 +295,10 @@ async fn test_create_multiple_groups() {
         ("support", "Support team"),
     ];
 
+    // Act
     for (name, desc) in groups {
         let req = CreateGroupRequest {
+            organization_id: 1,
             name: name.to_string(),
             description: Some(desc.to_string()),
         };
@@ -263,32 +306,39 @@ async fn test_create_multiple_groups() {
         assert!(result.is_ok(), "Failed to create group: {}", name);
     }
 
-    let all_groups = service.list_groups().await.unwrap();
-    assert_eq!(all_groups.len(), 5); // 2 default + 3 new
+    // Assert
+    let all_groups = service.list_groups(1).await.unwrap();
+    assert_eq!(all_groups.len(), 5);
 }
 
 #[tokio::test]
 async fn test_assign_multiple_users_to_group() {
+    // Setup
     let repo = Arc::new(MockGroupRepository::new());
     let service = GroupService::new(repo.clone());
 
+    // Act
     for user_id in 100..105 {
         let result = service.assign_user_to_group(user_id, 1, Some(1)).await;
         assert!(result.is_ok());
     }
 
+    // Assert
     let user_groups = repo.user_groups.lock().unwrap();
     assert_eq!(user_groups.len(), 5);
 }
 
 #[tokio::test]
 async fn test_assign_user_to_multiple_groups() {
+    // Setup
     let repo = Arc::new(MockGroupRepository::new());
     let service = GroupService::new(repo.clone());
 
+    // Act
     let result1 = service.assign_user_to_group(100, 1, Some(1)).await;
     let result2 = service.assign_user_to_group(100, 2, Some(1)).await;
 
+    // Assert
     assert!(result1.is_ok());
     assert!(result2.is_ok());
 

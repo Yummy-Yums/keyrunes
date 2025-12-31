@@ -1,3 +1,4 @@
+pub use crate::domain::organization::{NewOrganization, Organization};
 use anyhow::Result;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -9,6 +10,7 @@ use uuid::Uuid;
 pub struct User {
     pub user_id: i64,
     pub external_id: Uuid,
+    pub organization_id: i64,
     pub email: String,
     pub username: String,
     pub password_hash: String,
@@ -20,6 +22,7 @@ pub struct User {
 #[derive(Debug, Clone)]
 pub struct NewUser {
     pub external_id: Uuid,
+    pub organization_id: i64,
     pub email: String,
     pub username: String,
     pub password_hash: String,
@@ -30,6 +33,7 @@ pub struct NewUser {
 pub struct Group {
     pub group_id: i64,
     pub external_id: Uuid,
+    pub organization_id: i64,
     pub name: String,
     pub description: Option<String>,
     pub created_at: DateTime<Utc>,
@@ -39,6 +43,7 @@ pub struct Group {
 #[derive(Debug, Clone)]
 pub struct NewGroup {
     pub external_id: Uuid,
+    pub organization_id: i64,
     pub name: String,
     pub description: Option<String>,
 }
@@ -47,6 +52,7 @@ pub struct NewGroup {
 pub struct Policy {
     pub policy_id: i64,
     pub external_id: Uuid,
+    pub organization_id: i64,
     pub name: String,
     pub description: Option<String>,
     pub resource: String,
@@ -77,6 +83,7 @@ impl std::fmt::Display for PolicyEffect {
 #[derive(Debug, Clone)]
 pub struct NewPolicy {
     pub external_id: Uuid,
+    pub organization_id: i64,
     pub name: String,
     pub description: Option<String>,
     pub resource: String,
@@ -129,26 +136,6 @@ pub struct NewPasswordResetToken {
     pub expires_at: DateTime<Utc>,
 }
 
-#[derive(sqlx::FromRow, Debug, Clone)]
-#[allow(dead_code)]
-pub struct Settings {
-    pub settings_id: i32,
-    pub key: String,
-    pub value: String,
-    pub description: Option<String>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-}
-
-#[derive(Debug)]
-pub struct CreateSettings {
-    pub key: String,
-    pub value: String,
-    pub description: Option<String>,
-}
-
-// User Repository Trait
-#[allow(dead_code)]
 #[async_trait]
 pub trait UserRepository: Send + Sync + 'static {
     async fn find_by_email(&self, email: &str) -> Result<Option<User>>;
@@ -156,19 +143,19 @@ pub trait UserRepository: Send + Sync + 'static {
     async fn find_by_id(&self, user_id: i64) -> Result<Option<User>>;
     async fn insert_user(&self, new_user: NewUser) -> Result<User>;
     async fn update_user_password(&self, user_id: i64, new_password_hash: &str) -> Result<()>;
+    async fn update_user_profile(&self, user_id: i64, email: &str, username: &str) -> Result<()>;
     async fn set_first_login(&self, user_id: i64, first_login: bool) -> Result<()>;
     async fn get_user_groups(&self, user_id: i64) -> Result<Vec<Group>>;
     async fn get_user_policies(&self, user_id: i64) -> Result<Vec<Policy>>;
     async fn get_user_all_policies(&self, user_id: i64) -> Result<Vec<Policy>>;
 }
 
-// Group Repository Trait
 #[async_trait]
 pub trait GroupRepository: Send + Sync + 'static {
-    async fn find_by_name(&self, name: &str) -> Result<Option<Group>>;
+    async fn find_by_name(&self, name: &str, organization_id: i64) -> Result<Option<Group>>;
     async fn find_by_id(&self, group_id: i64) -> Result<Option<Group>>;
     async fn insert_group(&self, new_group: NewGroup) -> Result<Group>;
-    async fn list_groups(&self) -> Result<Vec<Group>>;
+    async fn list_groups(&self, organization_id: i64) -> Result<Vec<Group>>;
     async fn assign_user_to_group(
         &self,
         user_id: i64,
@@ -192,13 +179,12 @@ pub trait GroupRepository: Send + Sync + 'static {
     async fn get_group_policies(&self, group_id: i64) -> Result<Vec<Policy>>;
 }
 
-// Policy Repository Trait
 #[async_trait]
 pub trait PolicyRepository: Send + Sync + 'static {
-    async fn find_by_name(&self, name: &str) -> Result<Option<Policy>>;
+    async fn find_by_name(&self, name: &str, organization_id: i64) -> Result<Option<Policy>>;
     async fn find_by_id(&self, policy_id: i64) -> Result<Option<Policy>>;
     async fn insert_policy(&self, new_policy: NewPolicy) -> Result<Policy>;
-    async fn list_policies(&self) -> Result<Vec<Policy>>;
+    async fn list_policies(&self, organization_id: i64) -> Result<Vec<Policy>>;
     async fn assign_policy_to_user(
         &self,
         user_id: i64,
@@ -215,7 +201,6 @@ pub trait PolicyRepository: Send + Sync + 'static {
     async fn remove_policy_from_group(&self, group_id: i64, policy_id: i64) -> Result<()>;
 }
 
-// Password Reset Repository Trait
 #[async_trait]
 pub trait PasswordResetRepository: Send + Sync + 'static {
     async fn create_reset_token(&self, token: NewPasswordResetToken) -> Result<PasswordResetToken>;
@@ -224,13 +209,48 @@ pub trait PasswordResetRepository: Send + Sync + 'static {
     async fn cleanup_expired_tokens(&self) -> Result<()>;
 }
 
+#[derive(sqlx::FromRow, Debug, Clone)]
+#[allow(dead_code)]
+pub struct Settings {
+    pub settings_id: i32,
+    pub organization_id: Option<i64>,
+    pub key: String,
+    pub value: String,
+    pub description: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CreateSettings {
+    pub organization_id: Option<i64>,
+    pub key: String,
+    pub value: String,
+    pub description: Option<String>,
+}
+
 #[async_trait]
 pub trait SettingsRepository: Send + Sync + 'static {
     async fn create_settings(&self, settings: CreateSettings) -> Result<Option<CreateSettings>>;
     async fn get_settings_by_key(&self, key: &str) -> Result<Option<Settings>>;
+    async fn get_setting_by_key_and_org(
+        &self,
+        key: &str,
+        organization_id: Option<i64>,
+    ) -> Result<Option<Settings>>;
     async fn get_all_settings(&self) -> Result<Vec<Settings>>;
     async fn update_settings_by_key(&self, key: &str, value: &str) -> Result<()>;
     async fn delete_settings_by_key(&self, key: &str) -> Result<()>;
+}
+
+#[async_trait]
+pub trait OrganizationRepository: Send + Sync + 'static {
+    async fn find_by_name(&self, name: &str) -> Result<Option<Organization>>;
+    async fn find_by_id(&self, organization_id: i64) -> Result<Option<Organization>>;
+    async fn insert_organization(&self, new_org: NewOrganization) -> Result<Organization>;
+    async fn list_organizations(&self) -> Result<Vec<Organization>>;
+    async fn find_by_secret_key(&self, secret_key: Uuid) -> Result<Option<Organization>>;
+    async fn rotate_secret_key(&self, organization_id: i64) -> Result<Uuid>;
 }
 
 pub mod sqlx_impl;

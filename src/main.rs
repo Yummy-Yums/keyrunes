@@ -12,51 +12,47 @@ use tera::Tera;
 use tokio::net::TcpListener;
 use tower_http::services::ServeDir;
 
-mod api;
-mod domain;
-mod handler;
-mod repository;
-mod services;
-mod views;
+use keyrunes::api;
+use keyrunes::repository;
+use keyrunes::services;
+use keyrunes::views;
 
-use crate::handler::auth::{require_auth, require_superadmin};
-use crate::handler::errors::handler_404;
-use crate::handler::logging::{LogLevel, init_logging, request_logging_middleware};
+use keyrunes::handler::auth::{require_auth, require_org_key_or_superadmin, require_superadmin};
+use keyrunes::handler::errors::handler_404;
+use keyrunes::handler::logging::{LogLevel, init_logging, request_logging_middleware};
 
-use crate::repository::sqlx_impl::PgSettingsRepository;
-use crate::services::user_service::SettingsService;
+use keyrunes::repository::sqlx_impl::PgOrganizationRepository;
+use keyrunes::repository::sqlx_impl::PgSettingsRepository;
+use keyrunes::services::organization_service::OrganizationService;
+use keyrunes::services::user_service::SettingsService;
 use repository::sqlx_impl::{PgGroupRepository, PgPasswordResetRepository, PgUserRepository};
 use services::{email_service::EmailService, jwt_service::JwtService, user_service::UserService};
+
+use crate::api::openapi::ApiDoc;
+use utoipa::OpenApi;
+use utoipa_swagger_ui::SwaggerUi;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     dotenvy::dotenv().ok();
 
-    // Logging
-    let log_level = std::env::var("LOG_LEVEL")
-        .ok()
-        .and_then(|level| match level.to_lowercase().as_str() {
-            "info" => Some(LogLevel::Info),
-            "debug" => Some(LogLevel::Debug),
-            "error" => Some(LogLevel::Error),
-            "critical" => Some(LogLevel::Critical),
-            _ => None,
-        })
-        .unwrap_or(LogLevel::Info);
+    let log_level_str = std::env::var("LOG_LEVEL").unwrap_or_else(|_| "info".into());
+    let log_level = match log_level_str.to_lowercase().as_str() {
+        "debug" => LogLevel::Debug,
+        "error" => LogLevel::Error,
+        "critical" => LogLevel::Critical,
+        _ => LogLevel::Info,
+    };
 
-    // Init tracing
     init_logging(log_level);
 
     tracing::info!("🚀 Starting Keyrunes...");
     tracing::info!("📊 Log level configurated: {:?}", log_level);
 
-    // Initialize health check
     api::health::init_health_check();
 
-    // Database
-    tracing::info!("🔗 Starting database...");
     let database_url = std::env::var("DATABASE_URL")
-        .unwrap_or_else(|_| "postgres://postgres:password@localhost:5432/postgres".into());
+        .unwrap_or_else(|_| "postgres://postgres_user:pass123@localhost:5432/keyrunes".into());
 
     let pool = PgPoolOptions::new()
         .max_connections(5)
@@ -64,12 +60,17 @@ async fn main() -> anyhow::Result<()> {
         .await?;
     tracing::info!("✅ Database established!");
 
-    // Initialize repositories
+    sqlx::migrate!("./migrations")
+        .run(&pool)
+        .await
+        .expect("Failed to migrate database");
+    tracing::info!("✅ Migrations completed!");
+
     let user_repo = Arc::new(PgUserRepository::new(pool.clone()));
     let group_repo = Arc::new(PgGroupRepository::new(pool.clone()));
     let password_reset_repo = Arc::new(PgPasswordResetRepository::new(pool.clone()));
+    let organization_repo = Arc::new(PgOrganizationRepository::new(pool.clone()));
 
-    // Initialize JWT service
     let jwt_secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| {
         tracing::warn!(
             "⚠️  JWT_SECRET not seted, starting deafault token (DON'T USE IN PRODUCTION)"
@@ -80,11 +81,9 @@ async fn main() -> anyhow::Result<()> {
     let settings_repo = Arc::new(PgSettingsRepository::new(pool.clone()));
     let settings_service = Arc::new(SettingsService::new(settings_repo));
 
-    tracing::info!("📄 Loading templates...");
     let tera = Tera::new("templates/**/*").expect("Error to load templates");
     tracing::info!("✅ Templates loaded with success");
 
-    // Initialize email service (optional)
     let email_service = match EmailService::from_env(tera.clone().into()) {
         Ok(service) => {
             tracing::info!("✅ Email service configured");
@@ -99,7 +98,6 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
-    // Initialize user service
     let user_service = Arc::new(UserService::new(
         user_repo,
         group_repo,
@@ -108,8 +106,8 @@ async fn main() -> anyhow::Result<()> {
         settings_service,
         email_service,
     ));
+    let organization_service = Arc::new(OrganizationService::new(organization_repo));
 
-    // Public routes
     let public_router = Router::new()
         .route("/", get(|| async { Redirect::temporary("/login") }))
         .route("/api/health", get(api::health::health_check))
@@ -131,17 +129,27 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/reset-password", post(api::auth::reset_password_api))
         .nest_service("/static", ServeDir::new("./static"));
 
-    // Protected routes
-    let protected_router = Router::new()
+    let protected_web_router = Router::new()
         .route("/dashboard", get(views::auth::dashboard_page))
         .route(
             "/change-password",
             get(views::auth::change_password_page).post(views::auth::change_password_post),
         )
-        .route("/api/refresh-token", post(api::auth::refresh_token_api))
-        .route("/api/me", get(api::auth::me_api));
+        .route(
+            "/profile",
+            get(views::auth::profile_page).post(views::auth::profile_post),
+        );
 
-    // Admin routes
+    let protected_api_router = Router::new()
+        .route("/api/refresh-token", post(api::auth::refresh_token_api))
+        .route("/api/me", get(api::auth::me_api))
+        .route("/api/org/secret", get(api::organization::get_org_key))
+        .route(
+            "/api/org/secret/rotate",
+            post(api::organization::rotate_org_key),
+        )
+        .layer(from_fn(require_auth));
+
     let admin_web_router = Router::new()
         .route("/admin", get(views::admin::admin_page))
         .layer(from_fn(require_superadmin))
@@ -167,25 +175,56 @@ async fn main() -> anyhow::Result<()> {
             "/api/admin/check-permission",
             post(api::admin::check_permission),
         )
+        .route(
+            "/api/admin/organizations",
+            get(api::organization::list_organizations).post(api::organization::create_organization),
+        )
+        .route(
+            "/api/admin/organizations/{id}/rotate-key",
+            post(api::organization::admin_rotate_org_key),
+        )
         .layer(from_fn(require_superadmin))
         .layer(from_fn(require_auth));
 
-    // Main application
+    let external_api_router = Router::new()
+        .route(
+            "/api/verify-org-key",
+            get(
+                |Extension(org): Extension<keyrunes::repository::Organization>| async move {
+                    axum::Json(serde_json::json!({
+                        "status": "success",
+                        "organization": org.name,
+                        "organization_id": org.organization_id
+                    }))
+                },
+            ),
+        )
+        .route(
+            "/api/check-permission",
+            post(api::external::check_permission),
+        )
+        .layer(from_fn(require_org_key_or_superadmin));
+
     let app = Router::new()
         .merge(public_router)
-        .merge(protected_router)
+        .merge(protected_web_router)
+        .merge(protected_api_router)
         .merge(admin_web_router)
         .merge(admin_router)
+        .merge(external_api_router)
+        .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
         .fallback(handler_404)
         .layer(Extension(tera))
         .layer(Extension(user_service))
+        .layer(Extension(organization_service))
         .layer(Extension(jwt_service))
         .layer(Extension(pool))
         .layer(from_fn(request_logging_middleware));
 
-    let listener = TcpListener::bind("127.0.0.1:3000").await.unwrap();
-    tracing::info!("🛡️ KeyRunes server starting on http://127.0.0.1:3000");
+    let listener = TcpListener::bind("0.0.0.0:3000").await.unwrap();
+    tracing::info!("🛡️ KeyRunes server starting on http://0.0.0.0:3000");
     tracing::info!("📚 Available endpoints:");
+    tracing::info!("  • Swagger UI: /swagger-ui/");
     tracing::info!("  • Health: /api/health, /api/health/ready, /api/health/live");
     tracing::info!("  • Public: /login, /register, /forgot-password, /reset-password");
     tracing::info!("  • Protected: /dashboard, /change-password");
@@ -207,114 +246,4 @@ async fn main() -> anyhow::Result<()> {
     axum::serve(listener, app).await.unwrap();
 
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use axum::{
-        body::Body,
-        http::{Request, StatusCode},
-    };
-    use tower::ServiceExt;
-
-    async fn create_test_app() -> Router {
-        let database_url = std::env::var("TEST_DATABASE_URL")
-            .unwrap_or_else(|_| "postgres://postgres:123456@localhost:5432/keyrunes_test".into());
-
-        let pool = PgPoolOptions::new()
-            .max_connections(5)
-            .connect(&database_url)
-            .await
-            .expect("Failed to connect to test database");
-
-        let user_repo = Arc::new(PgUserRepository::new(pool.clone()));
-        let group_repo = Arc::new(PgGroupRepository::new(pool.clone()));
-        let password_reset_repo = Arc::new(PgPasswordResetRepository::new(pool.clone()));
-        let jwt_service = Arc::new(JwtService::new("test_secret"));
-        let settings_repo = Arc::new(PgSettingsRepository::new(pool.clone()));
-        let settings_service = Arc::new(SettingsService::new(settings_repo));
-        let user_service = Arc::new(UserService::new(
-            user_repo,
-            group_repo,
-            password_reset_repo,
-            jwt_service.clone(),
-            settings_service.clone(),
-            None,
-        ));
-
-        let tera = Tera::new("templates/**/*").expect("Error loading templates");
-
-        Router::new()
-            .route("/api/health", get(api::health::health_check))
-            .route("/api/register", post(api::auth::register_api))
-            .route("/api/login", post(api::auth::login_api))
-            .fallback(handler_404)
-            .layer(Extension(tera))
-            .layer(Extension(user_service))
-            .layer(Extension(jwt_service))
-            .layer(Extension(pool))
-    }
-
-    #[test]
-    fn test_log_level_parsing() {
-        let test_cases = vec![
-            ("info", Some(LogLevel::Info)),
-            ("INFO", Some(LogLevel::Info)),
-            ("debug", Some(LogLevel::Debug)),
-            ("error", Some(LogLevel::Error)),
-            ("critical", Some(LogLevel::Critical)),
-            ("invalid", None),
-        ];
-
-        for (input, expected) in test_cases {
-            let result = match input.to_lowercase().as_str() {
-                "info" => Some(LogLevel::Info),
-                "debug" => Some(LogLevel::Debug),
-                "error" => Some(LogLevel::Error),
-                "critical" => Some(LogLevel::Critical),
-                _ => None,
-            };
-            assert_eq!(result, expected, "Failed for input: {}", input);
-        }
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn test_health_check() {
-        let app = create_test_app().await;
-
-        let response = app
-            .oneshot(
-                Request::builder()
-                    .uri("/api/health")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert!(
-            response.status() == StatusCode::OK
-                || response.status() == StatusCode::SERVICE_UNAVAILABLE
-        );
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn test_404_handler() {
-        let app = create_test_app().await;
-
-        let response = app
-            .oneshot(
-                Request::builder()
-                    .uri("/invalid")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::NOT_FOUND);
-    }
 }

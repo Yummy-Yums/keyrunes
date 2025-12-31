@@ -1,5 +1,6 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="en">
+
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
@@ -7,12 +8,145 @@
 
   <link rel="stylesheet" href="https://femtocat.b-cdn.net/styles.min.css">
 
+  <script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.8/dist/htmx.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/htmx-ext-json-enc@2.0.1/json-enc.js"></script>
+
   <style>
-    body { padding: 2rem; max-width: 900px; margin: 0 auto; }
-    .card { padding: 1.5rem; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
-    form > * { margin-bottom: .75rem; display:block; width:100%;}
+    body {
+      padding: 2rem;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .card {
+      padding: 1.5rem;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+    }
+
+    form>* {
+      margin-bottom: .75rem;
+      display: block;
+      width: 100%;
+    }
+
+    /* HTMX Loading Indicator */
+    .htmx-indicator {
+      opacity: 0;
+      transition: opacity 200ms ease-in;
+      display: inline-block;
+      margin-left: 0.5rem;
+    }
+
+    .htmx-request .htmx-indicator {
+      opacity: 1;
+    }
+
+    .htmx-request.htmx-indicator {
+      opacity: 1;
+    }
+
+    button .htmx-indicator {
+      font-size: 0.9em;
+      font-style: italic;
+    }
+
+    /* Modal Styles */
+    .modal {
+      display: none;
+      position: fixed;
+      z-index: 1000;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0, 0.4);
+    }
+
+    .modal.active {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal-content {
+      background: var(--card-bg, #fff);
+      padding: 2rem;
+      border-radius: 8px;
+      max-width: 500px;
+      width: 90%;
+      max-height: 90vh;
+      overflow-y: auto;
+      position: relative;
+    }
+
+    .modal-close {
+      position: absolute;
+      top: 1rem;
+      right: 1rem;
+      font-size: 1.5rem;
+      cursor: pointer;
+      border: none;
+      background: none;
+      color: var(--text, #333);
+    }
+
+    /* Tabs */
+    .tabs {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 1.5rem;
+      border-bottom: 2px solid var(--border, #ddd);
+    }
+
+    .tab-btn {
+      padding: 0.75rem 1.5rem;
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      cursor: pointer;
+      color: var(--text-secondary, #666);
+      margin-bottom: -2px;
+    }
+
+    .tab-btn:hover {
+      color: var(--text, #333);
+    }
+
+    .tab-btn.active {
+      color: var(--primary, #007bff);
+      border-bottom-color: var(--primary, #007bff);
+    }
+
+    .tab-content {
+      display: none;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+
+    /* Messages */
+    .message {
+      padding: 1rem;
+      margin-bottom: 1rem;
+      border-radius: 4px;
+    }
+
+    .message-success {
+      background: var(--success-bg, #d4edda);
+      color: var(--success-text, #155724);
+      border: 1px solid var(--success-border, #c3e6cb);
+    }
+
+    .message-error {
+      background: var(--error-bg, #f8d7da);
+      color: var(--error-text, #721c24);
+      border: 1px solid var(--error-border, #f5c6cb);
+    }
   </style>
 </head>
+
 <body>
   <header>
     {% block header %}
@@ -21,7 +155,7 @@
       <a href="/register">Register</a> |
       <a href="/login">Login</a>
     </nav>
-    <hr/>
+    <hr />
     {% endblock header %}
   </header>
 
@@ -30,8 +164,80 @@
   </main>
 
   <footer>
-    <hr/>
+    <hr />
     <small>Built with open source workers</small>
   </footer>
+
+  <script>
+    // Unified HTMX configuration for API calls
+    document.body.addEventListener('htmx:configRequest', function (evt) {
+      const path = evt.detail.path;
+      const verb = evt.detail.verb.toLowerCase();
+
+      // If it's an API call and not a GET, try to prepare for JSON submission
+      if (path.startsWith('/api/') && verb !== 'get') {
+        const elt = evt.detail.elt;
+        if (elt && (elt.tagName === 'FORM' || elt.closest('form'))) {
+          const form = elt.tagName === 'FORM' ? elt : elt.closest('form');
+
+          const formData = new FormData(form);
+          const jsonData = {};
+
+          formData.forEach((value, key) => {
+            // Special handling for common field patterns
+            if (value === '' && (key === 'description' || key.includes('desc'))) {
+              jsonData[key] = null;
+            } else if (key === 'user_id' || key === 'group_id' || key === 'organization_id') {
+              const num = parseInt(value, 10);
+              jsonData[key] = isNaN(num) ? value : num;
+            } else if (value === 'true' || value === 'false') {
+              jsonData[key] = value === 'true';
+            } else {
+              jsonData[key] = value;
+            }
+          });
+
+          // Set JSON headers
+          evt.detail.headers['Content-Type'] = 'application/json';
+
+          // Store the JSON object in parameters to be used in beforeRequest
+          evt.detail.parameters = jsonData;
+
+          // Tell HTMX not to add these to the URL
+          evt.detail.useUrlParams = false;
+        }
+      }
+    });
+
+    // Finalize JSON submission by overriding XHR send
+    document.body.addEventListener('htmx:beforeRequest', function (evt) {
+      const path = evt.detail.path;
+      const verb = evt.detail.verb.toLowerCase();
+
+      if (path.startsWith('/api/') && verb !== 'get') {
+        const parameters = evt.detail.requestConfig.parameters;
+
+        // If parameters is an object, it means we prepared it for JSON in configRequest
+        if (parameters && typeof parameters === 'object' && !(parameters instanceof FormData)) {
+          const xhr = evt.detail.xhr;
+          const originalSend = xhr.send;
+          const jsonBody = JSON.stringify(parameters);
+
+          xhr.send = function () {
+            // We use the raw XMLHttpRequest.prototype.send to avoid potential recursion or interference
+            XMLHttpRequest.prototype.send.call(this, jsonBody);
+          };
+        }
+      }
+    });
+
+    // Close modals on outside click
+    document.addEventListener('click', function (e) {
+      if (e.target.classList.contains('modal')) {
+        e.target.classList.remove('active');
+      }
+    });
+  </script>
 </body>
+
 </html>

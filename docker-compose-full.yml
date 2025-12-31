@@ -1,0 +1,34 @@
+services:
+  keyrunes-database:
+    image: postgres:17
+    container_name: keyrunes-database
+    environment:
+      POSTGRES_USER: keyrunes
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: keyrunes
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U keyrunes" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  keyrunes-app:
+    build: .
+    container_name: keyrunes-app
+    depends_on:
+      keyrunes-database:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://keyrunes:password@keyrunes-database:5432/keyrunes
+      JWT_SECRET: docker_test_secret_12345678901234567890_secure
+      RUST_LOG: info
+      PORT: 3000
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:3000/api/health" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5

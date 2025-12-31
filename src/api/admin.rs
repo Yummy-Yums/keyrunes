@@ -46,7 +46,6 @@ pub struct AdminInfo {
     pub groups: Vec<String>,
 }
 
-// POST /api/admin/user
 pub async fn create_user(
     Extension(user_service): Extension<Arc<UserServiceType>>,
     Extension(admin): Extension<AuthenticatedUser>,
@@ -58,17 +57,14 @@ pub async fn create_user(
     }
 }
 
-// GET /api/admin/dashboard
 pub async fn admin_dashboard(
     Extension(user): Extension<AuthenticatedUser>,
     Extension(pool): Extension<sqlx::PgPool>,
 ) -> impl IntoResponse {
-    // Check if user is superadmin
     if !user.groups.contains(&"superadmin".to_string()) {
         return (StatusCode::FORBIDDEN, "Superadmin access required").into_response();
     }
 
-    // Get statistics
     let user_count: i64 = sqlx::query_scalar!("SELECT COUNT(*) FROM users")
         .fetch_one(&pool)
         .await
@@ -102,12 +98,10 @@ pub async fn admin_dashboard(
     (StatusCode::OK, Json(dashboard)).into_response()
 }
 
-// GET /api/admin/users
 pub async fn list_users(
     Extension(user): Extension<AuthenticatedUser>,
     Extension(pool): Extension<sqlx::PgPool>,
 ) -> impl IntoResponse {
-    // Check if user is superadmin
     if !user.groups.contains(&"superadmin".to_string()) {
         return (StatusCode::FORBIDDEN, "Superadmin access required").into_response();
     }
@@ -145,12 +139,10 @@ pub async fn list_users(
     (StatusCode::OK, Json(user_list)).into_response()
 }
 
-// GET /api/admin/groups
 pub async fn list_groups(
     Extension(user): Extension<AuthenticatedUser>,
     Extension(pool): Extension<sqlx::PgPool>,
 ) -> impl IntoResponse {
-    // Check if user is superadmin
     if !user.groups.contains(&"superadmin".to_string()) {
         return (StatusCode::FORBIDDEN, "Superadmin access required").into_response();
     }
@@ -158,19 +150,17 @@ pub async fn list_groups(
     let group_repo = Arc::new(PgGroupRepository::new(pool));
     let group_service = GroupService::new(group_repo);
 
-    match group_service.list_groups().await {
+    match group_service.list_groups(1).await {
         Ok(groups) => (StatusCode::OK, Json(groups)).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }
 }
 
-// POST /api/admin/groups
 pub async fn create_group(
     Extension(user): Extension<AuthenticatedUser>,
     Extension(pool): Extension<sqlx::PgPool>,
     Json(payload): Json<CreateGroupRequest>,
 ) -> impl IntoResponse {
-    // Check if user is superadmin
     if !user.groups.contains(&"superadmin".to_string()) {
         return (StatusCode::FORBIDDEN, "Superadmin access required").into_response();
     }
@@ -184,12 +174,10 @@ pub async fn create_group(
     }
 }
 
-// GET /api/admin/policies
 pub async fn list_policies(
     Extension(user): Extension<AuthenticatedUser>,
     Extension(pool): Extension<sqlx::PgPool>,
 ) -> impl IntoResponse {
-    // Check if user is superadmin
     if !user.groups.contains(&"superadmin".to_string()) {
         return (StatusCode::FORBIDDEN, "Superadmin access required").into_response();
     }
@@ -197,19 +185,17 @@ pub async fn list_policies(
     let policy_repo = Arc::new(PgPolicyRepository::new(pool));
     let policy_service = PolicyService::new(policy_repo);
 
-    match policy_service.list_policies().await {
+    match policy_service.list_policies(1).await {
         Ok(policies) => (StatusCode::OK, Json(policies)).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }
 }
 
-// POST /api/admin/policies
 pub async fn create_policy(
     Extension(user): Extension<AuthenticatedUser>,
     Extension(pool): Extension<sqlx::PgPool>,
     Json(payload): Json<CreatePolicyRequest>,
 ) -> impl IntoResponse {
-    // Check if user is superadmin
     if !user.groups.contains(&"superadmin".to_string()) {
         return (StatusCode::FORBIDDEN, "Superadmin access required").into_response();
     }
@@ -223,13 +209,11 @@ pub async fn create_policy(
     }
 }
 
-// POST /api/admin/users/:user_id/groups/:group_id
 pub async fn assign_user_to_group(
     Extension(admin): Extension<AuthenticatedUser>,
     Extension(pool): Extension<sqlx::PgPool>,
     Path((user_id, group_id)): Path<(i64, i64)>,
 ) -> impl IntoResponse {
-    // Check if user is superadmin
     if !admin.groups.contains(&"superadmin".to_string()) {
         return (StatusCode::FORBIDDEN, "Superadmin access required").into_response();
     }
@@ -252,13 +236,11 @@ pub async fn assign_user_to_group(
     }
 }
 
-// DELETE /api/admin/users/:user_id/groups/:group_id
 pub async fn remove_user_from_group(
     Extension(admin): Extension<AuthenticatedUser>,
     Extension(pool): Extension<sqlx::PgPool>,
     Path((user_id, group_id)): Path<(i64, i64)>,
 ) -> impl IntoResponse {
-    // Check if user is superadmin
     if !admin.groups.contains(&"superadmin".to_string()) {
         return (StatusCode::FORBIDDEN, "Superadmin access required").into_response();
     }
@@ -281,7 +263,6 @@ pub async fn remove_user_from_group(
     }
 }
 
-// POST /api/admin/check-permission
 #[derive(serde::Deserialize)]
 pub struct CheckPermissionRequest {
     pub user_id: i64,

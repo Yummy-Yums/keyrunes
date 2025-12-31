@@ -1,18 +1,9 @@
-/// Tests for smart 404 handler
-///
-/// This test suite verifies that the 404 handler correctly returns:
-/// - JSON for API routes (/api/*)
-/// - JSON when Accept header contains application/json
-/// - HTML for browser requests
 use axum::{
     Router,
     body::Body,
-    extract::Extension,
     http::{Request, StatusCode},
     routing::get,
 };
-use sqlx::postgres::PgPoolOptions;
-use std::sync::Arc;
 use tower::ServiceExt;
 
 mod test_handlers {
@@ -87,26 +78,17 @@ mod test_handlers {
 }
 
 async fn create_test_app() -> Router {
-    let database_url = std::env::var("TEST_DATABASE_URL")
-        .unwrap_or_else(|_| "postgres://postgres:123456@localhost:5432/keyrunes_test".into());
-
-    let pool = PgPoolOptions::new()
-        .max_connections(5)
-        .connect(&database_url)
-        .await
-        .expect("Failed to connect to test database");
-
     Router::new()
         .route("/api/health", get(test_handlers::mock_health))
         .fallback(test_handlers::handler_404)
-        .layer(Extension(Arc::new(pool)))
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_api_route_returns_json_404() {
+    // Setup
     let app = create_test_app().await;
 
+    // Act
     let response = app
         .oneshot(
             Request::builder()
@@ -117,6 +99,7 @@ async fn test_api_route_returns_json_404() {
         .await
         .unwrap();
 
+    // Assert
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 
     let content_type = response
@@ -130,20 +113,23 @@ async fn test_api_route_returns_json_404() {
         "API routes should return JSON"
     );
 
+    // Act
     let body = axum::body::to_bytes(response.into_body(), usize::MAX)
         .await
         .unwrap();
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
 
+    // Assert
     assert_eq!(json["status_code"], 404);
     assert_eq!(json["error"], "Not Found");
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_browser_route_returns_html_404() {
+    // Setup
     let app = create_test_app().await;
 
+    // Act
     let response = app
         .oneshot(
             Request::builder()
@@ -155,6 +141,7 @@ async fn test_browser_route_returns_html_404() {
         .await
         .unwrap();
 
+    // Assert
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 
     let content_type = response
@@ -178,7 +165,6 @@ async fn test_browser_route_returns_html_404() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_json_accept_header_returns_json() {
     let app = create_test_app().await;
 
@@ -199,13 +185,11 @@ async fn test_json_accept_header_returns_json() {
         .await
         .unwrap();
 
-    // Should be valid JSON
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["status_code"], 404);
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_no_accept_header_returns_html() {
     let app = create_test_app().await;
 
@@ -226,12 +210,10 @@ async fn test_no_accept_header_returns_html() {
         .unwrap();
     let content = String::from_utf8(body.to_vec()).unwrap();
 
-    // Should be HTML
     assert!(content.contains("<html>") || content.contains("<!DOCTYPE"));
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_api_prefix_always_json() {
     let app = create_test_app().await;
 
@@ -248,7 +230,7 @@ async fn test_api_prefix_always_json() {
             .oneshot(
                 Request::builder()
                     .uri(path)
-                    .header("accept", "text/html") // Even with HTML accept
+                    .header("accept", "text/html")
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -261,7 +243,6 @@ async fn test_api_prefix_always_json() {
             .await
             .unwrap();
 
-        // Should be JSON despite HTML Accept header
         let json: Result<serde_json::Value, _> = serde_json::from_slice(&body);
         assert!(
             json.is_ok(),
@@ -272,7 +253,6 @@ async fn test_api_prefix_always_json() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_valid_route_still_works() {
     let app = create_test_app().await;
 
@@ -290,7 +270,6 @@ async fn test_valid_route_still_works() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_json_structure_is_correct() {
     let app = create_test_app().await;
 
@@ -317,7 +296,6 @@ async fn test_json_structure_is_correct() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_html_page_has_useful_content() {
     let app = create_test_app().await;
 
@@ -337,17 +315,15 @@ async fn test_html_page_has_useful_content() {
         .unwrap();
     let html = String::from_utf8(body.to_vec()).unwrap();
 
-    // Should have useful content
     assert!(html.contains("404"));
     assert!(html.to_lowercase().contains("not found") || html.to_lowercase().contains("page"));
 }
 
 #[tokio::test]
-#[ignore]
+
 async fn test_mixed_accept_headers() {
     let app = create_test_app().await;
 
-    // Accept: text/html, application/json
     let response = app
         .oneshot(
             Request::builder()
@@ -363,7 +339,6 @@ async fn test_mixed_accept_headers() {
         .await
         .unwrap();
 
-    // Should return JSON because it's explicitly requested
     let json: Result<serde_json::Value, _> = serde_json::from_slice(&body);
     assert!(
         json.is_ok(),

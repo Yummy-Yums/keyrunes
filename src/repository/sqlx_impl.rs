@@ -19,7 +19,7 @@ impl UserRepository for PgUserRepository {
     async fn find_by_email(&self, email: &str) -> Result<Option<User>> {
         let rec = sqlx::query_as!(
             User,
-            r#"SELECT user_id, external_id, email, username, password_hash, created_at, first_login, updated_at  FROM users WHERE email = $1"#,
+            r#"SELECT user_id, external_id, organization_id, email, username, password_hash, created_at, first_login, updated_at  FROM users WHERE LOWER(email) = LOWER($1)"#,
             email
         )
         .fetch_optional(&self.pool)
@@ -30,7 +30,7 @@ impl UserRepository for PgUserRepository {
     async fn find_by_username(&self, username: &str) -> Result<Option<User>> {
         let rec = sqlx::query_as!(
             User,
-            r#"SELECT user_id, external_id, email, username, password_hash, created_at, first_login, updated_at FROM users WHERE username = $1"#,
+            r#"SELECT user_id, external_id, organization_id, email, username, password_hash, created_at, first_login, updated_at FROM users WHERE username = $1"#,
             username
         )
         .fetch_optional(&self.pool)
@@ -41,7 +41,7 @@ impl UserRepository for PgUserRepository {
     async fn find_by_id(&self, user_id: i64) -> Result<Option<User>> {
         let rec = sqlx::query_as!(
             User,
-            r#"SELECT user_id, external_id, email, username, password_hash, first_login, created_at, updated_at FROM users WHERE user_id = $1"#,
+            r#"SELECT user_id, external_id, organization_id, email, username, password_hash, first_login, created_at, updated_at FROM users WHERE user_id = $1"#,
             user_id
         )
         .fetch_optional(&self.pool)
@@ -52,8 +52,9 @@ impl UserRepository for PgUserRepository {
     async fn insert_user(&self, new_user: NewUser) -> Result<User> {
         let rec = sqlx::query_as!(
             User,
-            r#"INSERT INTO users (external_id, email, username, password_hash, first_login) VALUES ($1, $2, $3, $4, $5) RETURNING user_id, external_id, email, username, password_hash, first_login, created_at, updated_at"#,
+            r#"INSERT INTO users (external_id, organization_id, email, username, password_hash, first_login) VALUES ($1, $2, $3, $4, $5, $6) RETURNING user_id, external_id, organization_id, email, username, password_hash, first_login, created_at, updated_at"#,
             new_user.external_id,
+            new_user.organization_id,
             new_user.email,
             new_user.username,
             new_user.password_hash,
@@ -75,6 +76,18 @@ impl UserRepository for PgUserRepository {
         Ok(())
     }
 
+    async fn update_user_profile(&self, user_id: i64, email: &str, username: &str) -> Result<()> {
+        sqlx::query!(
+            "UPDATE users SET email = $1, username = $2, updated_at = now() WHERE user_id = $3",
+            email,
+            username,
+            user_id
+        )
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
     async fn set_first_login(&self, user_id: i64, first_login: bool) -> Result<()> {
         sqlx::query!(
             "UPDATE users SET first_login = $1, updated_at = now() WHERE user_id = $2",
@@ -89,7 +102,7 @@ impl UserRepository for PgUserRepository {
     async fn get_user_groups(&self, user_id: i64) -> Result<Vec<Group>> {
         let groups = sqlx::query_as!(
             Group,
-            r#"SELECT g.group_id, g.external_id, g.name, g.description, g.created_at, g.updated_at
+            r#"SELECT g.group_id, g.external_id, g.organization_id, g.name, g.description, g.created_at, g.updated_at
                FROM groups g
                INNER JOIN user_groups ug ON g.group_id = ug.group_id
                WHERE ug.user_id = $1"#,
@@ -102,7 +115,7 @@ impl UserRepository for PgUserRepository {
 
     async fn get_user_policies(&self, user_id: i64) -> Result<Vec<Policy>> {
         let policies = sqlx::query!(
-            r#"SELECT p.policy_id, p.external_id, p.name, p.description, p.resource, p.action, 
+            r#"SELECT p.policy_id, p.external_id, p.organization_id, p.name, p.description, p.resource, p.action, 
                p.effect as "effect_str", p.conditions, p.created_at, p.updated_at
                FROM policies p
                INNER JOIN user_policies up ON p.policy_id = up.policy_id
@@ -123,6 +136,7 @@ impl UserRepository for PgUserRepository {
             result.push(Policy {
                 policy_id: row.policy_id,
                 external_id: row.external_id,
+                organization_id: row.organization_id,
                 name: row.name,
                 description: row.description,
                 resource: row.resource,
@@ -138,7 +152,7 @@ impl UserRepository for PgUserRepository {
 
     async fn get_user_all_policies(&self, user_id: i64) -> Result<Vec<Policy>> {
         let policies = sqlx::query!(
-            r#"SELECT DISTINCT p.policy_id, p.external_id, p.name, p.description, p.resource, p.action, 
+            r#"SELECT DISTINCT p.policy_id, p.external_id, p.organization_id, p.name, p.description, p.resource, p.action, 
                p.effect as "effect_str", p.conditions, p.created_at, p.updated_at
                FROM policies p
                LEFT JOIN user_policies up ON p.policy_id = up.policy_id AND up.user_id = $1
@@ -161,6 +175,7 @@ impl UserRepository for PgUserRepository {
             result.push(Policy {
                 policy_id: row.policy_id,
                 external_id: row.external_id,
+                organization_id: row.organization_id,
                 name: row.name,
                 description: row.description,
                 resource: row.resource,
@@ -190,8 +205,9 @@ impl SettingsRepository for PgSettingsRepository {
     async fn create_settings(&self, settings: CreateSettings) -> Result<Option<CreateSettings>> {
         let record = sqlx::query_as!(
             CreateSettings,
-            r#"INSERT INTO settings (key, value, description) VALUES ($1, $2, $3)
-               RETURNING key, value, description"#,
+            r#"INSERT INTO settings (organization_id, key, value, description) VALUES ($1, $2, $3, $4)
+               RETURNING organization_id, key, value, description"#,
+            settings.organization_id,
             settings.key,
             settings.value,
             settings.description,
@@ -203,9 +219,43 @@ impl SettingsRepository for PgSettingsRepository {
     }
 
     async fn get_settings_by_key(&self, key: &str) -> Result<Option<Settings>> {
-        let record = sqlx::query_as!(Settings, r#"SELECT * FROM settings WHERE key = $1"#, key)
-            .fetch_optional(&self.pool)
-            .await?;
+        let record = sqlx::query_as!(
+            Settings,
+            r#"SELECT * FROM settings WHERE key = $1 AND organization_id IS NULL"#,
+            key
+        )
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(record)
+    }
+
+    async fn get_setting_by_key_and_org(
+        &self,
+        key: &str,
+        organization_id: Option<i64>,
+    ) -> Result<Option<Settings>> {
+        let record = match organization_id {
+            Some(org_id) => {
+                sqlx::query_as!(
+                    Settings,
+                    r#"SELECT * FROM settings WHERE key = $1 AND (organization_id = $2 OR organization_id IS NULL) ORDER BY organization_id NULLS LAST LIMIT 1"#,
+                    key,
+                    org_id
+                )
+                .fetch_optional(&self.pool)
+                .await?
+            }
+            None => {
+                 sqlx::query_as!(
+                    Settings,
+                    r#"SELECT * FROM settings WHERE key = $1 AND organization_id IS NULL"#,
+                    key
+                )
+                .fetch_optional(&self.pool)
+                .await?
+            }
+        };
 
         Ok(record)
     }
@@ -252,11 +302,12 @@ impl PgGroupRepository {
 
 #[async_trait]
 impl GroupRepository for PgGroupRepository {
-    async fn find_by_name(&self, name: &str) -> Result<Option<Group>> {
+    async fn find_by_name(&self, name: &str, organization_id: i64) -> Result<Option<Group>> {
         let rec = sqlx::query_as!(
             Group,
-            r#"SELECT group_id, external_id, name, description, created_at, updated_at FROM groups WHERE name = $1"#,
-            name
+            r#"SELECT group_id, external_id, organization_id, name, description, created_at, updated_at FROM groups WHERE name = $1 AND organization_id = $2"#,
+            name,
+            organization_id
         )
         .fetch_optional(&self.pool)
         .await?;
@@ -266,7 +317,7 @@ impl GroupRepository for PgGroupRepository {
     async fn find_by_id(&self, group_id: i64) -> Result<Option<Group>> {
         let rec = sqlx::query_as!(
             Group,
-            r#"SELECT group_id, external_id, name, description, created_at, updated_at FROM groups WHERE group_id = $1"#,
+            r#"SELECT group_id, external_id, organization_id, name, description, created_at, updated_at FROM groups WHERE group_id = $1"#,
             group_id
         )
         .fetch_optional(&self.pool)
@@ -277,10 +328,11 @@ impl GroupRepository for PgGroupRepository {
     async fn insert_group(&self, new_group: NewGroup) -> Result<Group> {
         let rec = sqlx::query_as!(
             Group,
-            r#"INSERT INTO groups (external_id, name, description) 
-               VALUES ($1, $2, $3) 
-               RETURNING group_id, external_id, name, description, created_at, updated_at"#,
+            r#"INSERT INTO groups (external_id, organization_id, name, description) 
+               VALUES ($1, $2, $3, $4) 
+               RETURNING group_id, external_id, organization_id, name, description, created_at, updated_at"#,
             new_group.external_id,
+            new_group.organization_id,
             new_group.name,
             new_group.description
         )
@@ -289,10 +341,11 @@ impl GroupRepository for PgGroupRepository {
         Ok(rec)
     }
 
-    async fn list_groups(&self) -> Result<Vec<Group>> {
+    async fn list_groups(&self, organization_id: i64) -> Result<Vec<Group>> {
         let groups = sqlx::query_as!(
             Group,
-            r#"SELECT group_id, external_id, name, description, created_at, updated_at FROM groups ORDER BY name"#
+            r#"SELECT group_id, external_id, organization_id, name, description, created_at, updated_at FROM groups WHERE organization_id = $1 ORDER BY name"#,
+            organization_id
         )
         .fetch_all(&self.pool)
         .await?;
@@ -329,7 +382,7 @@ impl GroupRepository for PgGroupRepository {
 
     async fn get_group_policies(&self, group_id: i64) -> Result<Vec<Policy>> {
         let policies = sqlx::query!(
-            r#"SELECT p.policy_id, p.external_id, p.name, p.description, p.resource, p.action, 
+            r#"SELECT p.policy_id, p.external_id, p.organization_id, p.name, p.description, p.resource, p.action, 
                p.effect as "effect_str", p.conditions, p.created_at, p.updated_at
                FROM policies p
                INNER JOIN group_policies gp ON p.policy_id = gp.policy_id
@@ -350,6 +403,7 @@ impl GroupRepository for PgGroupRepository {
             result.push(Policy {
                 policy_id: row.policy_id,
                 external_id: row.external_id,
+                organization_id: row.organization_id,
                 name: row.name,
                 description: row.description,
                 resource: row.resource,
@@ -378,12 +432,13 @@ impl PgPolicyRepository {
 
 #[async_trait]
 impl PolicyRepository for PgPolicyRepository {
-    async fn find_by_name(&self, name: &str) -> Result<Option<Policy>> {
+    async fn find_by_name(&self, name: &str, organization_id: i64) -> Result<Option<Policy>> {
         let row = sqlx::query!(
-            r#"SELECT policy_id, external_id, name, description, resource, action, 
+            r#"SELECT policy_id, external_id, organization_id, name, description, resource, action, 
                effect as "effect_str", conditions, created_at, updated_at 
-               FROM policies WHERE name = $1"#,
-            name
+               FROM policies WHERE name = $1 AND organization_id = $2"#,
+            name,
+            organization_id
         )
         .fetch_optional(&self.pool)
         .await?;
@@ -398,6 +453,7 @@ impl PolicyRepository for PgPolicyRepository {
             Ok(Some(Policy {
                 policy_id: row.policy_id,
                 external_id: row.external_id,
+                organization_id: row.organization_id,
                 name: row.name,
                 description: row.description,
                 resource: row.resource,
@@ -414,7 +470,7 @@ impl PolicyRepository for PgPolicyRepository {
 
     async fn find_by_id(&self, policy_id: i64) -> Result<Option<Policy>> {
         let row = sqlx::query!(
-            r#"SELECT policy_id, external_id, name, description, resource, action, 
+            r#"SELECT policy_id, external_id, organization_id, name, description, resource, action, 
                effect as "effect_str", conditions, created_at, updated_at 
                FROM policies WHERE policy_id = $1"#,
             policy_id
@@ -432,6 +488,7 @@ impl PolicyRepository for PgPolicyRepository {
             Ok(Some(Policy {
                 policy_id: row.policy_id,
                 external_id: row.external_id,
+                organization_id: row.organization_id,
                 name: row.name,
                 description: row.description,
                 resource: row.resource,
@@ -449,11 +506,12 @@ impl PolicyRepository for PgPolicyRepository {
     async fn insert_policy(&self, new_policy: NewPolicy) -> Result<Policy> {
         let effect_str = new_policy.effect.to_string();
         let row = sqlx::query!(
-            r#"INSERT INTO policies (external_id, name, description, resource, action, effect, conditions) 
-               VALUES ($1, $2, $3, $4, $5, $6, $7) 
-               RETURNING policy_id, external_id, name, description, resource, action, 
+            r#"INSERT INTO policies (external_id, organization_id, name, description, resource, action, effect, conditions) 
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
+               RETURNING policy_id, external_id, organization_id, name, description, resource, action, 
                effect as "effect_str", conditions, created_at, updated_at"#,
             new_policy.external_id,
+            new_policy.organization_id,
             new_policy.name,
             new_policy.description,
             new_policy.resource,
@@ -473,6 +531,7 @@ impl PolicyRepository for PgPolicyRepository {
         Ok(Policy {
             policy_id: row.policy_id,
             external_id: row.external_id,
+            organization_id: row.organization_id,
             name: row.name,
             description: row.description,
             resource: row.resource,
@@ -484,11 +543,12 @@ impl PolicyRepository for PgPolicyRepository {
         })
     }
 
-    async fn list_policies(&self) -> Result<Vec<Policy>> {
+    async fn list_policies(&self, organization_id: i64) -> Result<Vec<Policy>> {
         let rows = sqlx::query!(
-            r#"SELECT policy_id, external_id, name, description, resource, action, 
+            r#"SELECT policy_id, external_id, organization_id, name, description, resource, action, 
                effect as "effect_str", conditions, created_at, updated_at 
-               FROM policies ORDER BY name"#
+               FROM policies WHERE organization_id = $1 ORDER BY name"#,
+            organization_id
         )
         .fetch_all(&self.pool)
         .await?;
@@ -504,6 +564,7 @@ impl PolicyRepository for PgPolicyRepository {
             result.push(Policy {
                 policy_id: row.policy_id,
                 external_id: row.external_id,
+                organization_id: row.organization_id,
                 name: row.name,
                 description: row.description,
                 resource: row.resource,
@@ -629,5 +690,85 @@ impl PasswordResetRepository for PgPasswordResetRepository {
             .execute(&self.pool)
             .await?;
         Ok(())
+    }
+}
+
+pub struct PgOrganizationRepository {
+    pub pool: PgPool,
+}
+
+impl PgOrganizationRepository {
+    pub fn new(pool: PgPool) -> Self {
+        Self { pool }
+    }
+}
+
+#[async_trait]
+impl OrganizationRepository for PgOrganizationRepository {
+    async fn find_by_name(&self, name: &str) -> Result<Option<Organization>> {
+        let rec = sqlx::query_as!(
+            Organization,
+            r#"SELECT organization_id, external_id, name, description, secret_key, created_at, updated_at FROM organizations WHERE name = $1"#,
+            name
+        )
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(rec)
+    }
+
+    async fn find_by_id(&self, organization_id: i64) -> Result<Option<Organization>> {
+        let rec = sqlx::query_as!(
+            Organization,
+            r#"SELECT organization_id, external_id, name, description, secret_key, created_at, updated_at FROM organizations WHERE organization_id = $1"#,
+            organization_id
+        )
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(rec)
+    }
+
+    async fn insert_organization(&self, new_org: NewOrganization) -> Result<Organization> {
+        let rec = sqlx::query_as!(
+            Organization,
+            r#"INSERT INTO organizations (name, description) VALUES ($1, $2) RETURNING organization_id, external_id, name, description, secret_key, created_at, updated_at"#,
+            new_org.name,
+            new_org.description
+        )
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(rec)
+    }
+
+    async fn list_organizations(&self) -> Result<Vec<Organization>> {
+        let recs = sqlx::query_as!(
+            Organization,
+            r#"SELECT organization_id, external_id, name, description, secret_key, created_at, updated_at FROM organizations ORDER BY name"#
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(recs)
+    }
+
+    async fn find_by_secret_key(&self, secret_key: Uuid) -> Result<Option<Organization>> {
+        let rec = sqlx::query_as!(
+            Organization,
+            r#"SELECT organization_id, external_id, name, description, secret_key, created_at, updated_at FROM organizations WHERE secret_key = $1"#,
+            secret_key
+        )
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(rec)
+    }
+
+    async fn rotate_secret_key(&self, organization_id: i64) -> Result<Uuid> {
+        let new_key = Uuid::new_v4();
+        sqlx::query!(
+            "UPDATE organizations SET secret_key = $1, updated_at = now() WHERE organization_id = $2",
+            new_key,
+            organization_id
+        )
+        .execute(&self.pool)
+        .await?;
+        Ok(new_key)
     }
 }

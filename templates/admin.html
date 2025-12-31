@@ -2,23 +2,19 @@
 
 {% block header %}
 <h1>Keyrunes Admin Panel</h1>
-<p>Logged in as: <strong>{{ user.username }}</strong> ({{ user.email }}) | <a href="/dashboard">← Back to Dashboard</a></p>
-<hr/>
+<p>Logged in as: <strong>{{ user.username }}</strong> ({{ user.email }}) | <a href="/dashboard">← Back to Dashboard</a>
+</p>
+<hr />
 {% endblock header %}
 
 {% block content %}
 <section class="card">
-  {% if error %}
-  <div class="alert alert-danger">{{ error }}</div>
-  {% endif %}
-
-  {% if success %}
-  <div class="alert alert-success">{{ success }}</div>
-  {% endif %}
+  <div id="messages"></div>
 
   <div class="tabs">
     <button class="tab-btn active" onclick="showTab('users')">Users</button>
     <button class="tab-btn" onclick="showTab('groups')">Groups</button>
+    <button class="tab-btn" onclick="showTab('organizations')">Organizations</button>
     <button class="tab-btn" onclick="showTab('permissions')">Permissions</button>
   </div>
 
@@ -40,9 +36,11 @@
           <th>Actions</th>
         </tr>
       </thead>
-      <tbody id="users-list">
-        <tr>
-          <td colspan="6" style="text-align: center; color: #999;">Loading users...</td>
+      <tbody id="users-list" hx-indicator="#users-loading">
+        <tr id="users-loading">
+          <td colspan="6" style="text-align: center;">
+            <span class="htmx-indicator">Loading users...</span>
+          </td>
         </tr>
       </tbody>
     </table>
@@ -65,9 +63,38 @@
           <th>Actions</th>
         </tr>
       </thead>
-      <tbody id="groups-list">
+      <tbody id="groups-list" hx-indicator="#groups-loading">
+        <tr id="groups-loading">
+          <td colspan="5" style="text-align: center;">
+            <span class="htmx-indicator">Loading groups...</span>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Organizations Tab -->
+  <div id="organizations-tab" class="tab-content">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin: 1rem 0;">
+      <h3>Organizations</h3>
+    </div>
+
+    <table>
+      <thead>
         <tr>
-          <td colspan="5" style="text-align: center; color: #999;">Loading groups...</td>
+          <th>ID</th>
+          <th>Name</th>
+          <th>Description</th>
+          <th>Secret Key</th>
+          <th>Created At</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="organizations-list" hx-indicator="#organizations-loading">
+        <tr id="organizations-loading">
+          <td colspan="6" style="text-align: center;">
+            <span class="htmx-indicator">Loading organizations...</span>
+          </td>
         </tr>
       </tbody>
     </table>
@@ -76,385 +103,415 @@
   <!-- Permissions Tab -->
   <div id="permissions-tab" class="tab-content">
     <h3>Permission Check</h3>
-
-    <div class="card" style="background: #f8f9fa; margin-top: 1rem;">
+    <div class="card" style="background: var(--card-bg, #f8f9fa); margin-top: 1rem;">
       <h4>Check User Permission</h4>
-      <form id="check-permission-form">
+      <form hx-post="/api/admin/check-permission" hx-target="#permission-result" hx-swap="innerHTML"
+        hx-indicator="#check-permission-indicator">
         <label>User ID:</label>
-        <input type="number" id="perm-user-id" required>
+        <input type="number" name="user_id" required>
 
         <label>Group Name:</label>
-        <input type="text" id="perm-group-name" required>
+        <input type="text" name="group_name" required>
 
         <label>Resource:</label>
-        <input type="text" id="perm-resource" placeholder="e.g., user:*, admin:*" required>
+        <input type="text" name="resource" placeholder="e.g., user:*, admin:*" required>
 
         <label>Action:</label>
-        <input type="text" id="perm-action" placeholder="e.g., read, write, delete" required>
+        <input type="text" name="action" placeholder="e.g., read, write, delete" required>
 
-        <button type="submit">Check Permission</button>
+        <button type="submit">
+          <span class="htmx-indicator" id="check-permission-indicator">Checking...</span>
+          Check Permission
+        </button>
       </form>
-
       <div id="permission-result"></div>
     </div>
   </div>
 </section>
 
-<!-- Modals -->
+<!-- Modal: Create User -->
 <div id="createUserModal" class="modal">
   <div class="modal-content card">
-    <span class="close" onclick="closeModal('createUserModal')">&times;</span>
+    <button class="modal-close" onclick="closeModal('createUserModal')">&times;</button>
     <h3>Create New User</h3>
-    <form id="create-user-form">
+    <form hx-post="/api/admin/user" hx-target="#messages" hx-swap="innerHTML" hx-indicator="#create-user-indicator"
+      hx-on::after-request="handleUserCreated(event)">
       <label>Email:</label>
-      <input type="email" id="user-email" required>
+      <input type="hidden" name="organization_id" value="1">
+      <input type="email" name="email" id="user-email" required>
 
       <label>Username:</label>
-      <input type="text" id="user-username" required>
+      <input type="text" name="username" id="user-username" required>
 
       <label>Password:</label>
-      <input type="password" id="user-password" required>
+      <input type="password" name="password" id="user-password" required>
 
       <label>
-        <input type="checkbox" id="user-first-login">
+        <input type="checkbox" name="first_login" id="user-first-login" value="true">
         Require password change on first login
       </label>
 
-      <button type="submit">Create User</button>
+      <button type="submit">
+        <span class="htmx-indicator" id="create-user-indicator">Creating...</span>
+        Create User
+      </button>
     </form>
   </div>
 </div>
 
+<!-- Modal: Create Group -->
 <div id="createGroupModal" class="modal">
   <div class="modal-content card">
-    <span class="close" onclick="closeModal('createGroupModal')">&times;</span>
+    <button class="modal-close" onclick="closeModal('createGroupModal')">&times;</button>
     <h3>Create New Group</h3>
-    <form id="create-group-form">
+    <form hx-post="/api/admin/groups" hx-target="#messages" hx-swap="innerHTML" hx-indicator="#create-group-indicator"
+      hx-on::after-request="handleGroupCreated(event)">
       <label>Group Name:</label>
-      <input type="text" id="group-name" required>
+      <input type="hidden" name="organization_id" value="1">
+      <input type="text" name="name" id="group-name" required>
 
       <label>Description:</label>
-      <textarea id="group-description" rows="3"></textarea>
+      <textarea name="description" id="group-description" rows="3"></textarea>
 
-      <button type="submit">Create Group</button>
+      <button type="submit">
+        <span class="htmx-indicator" id="create-group-indicator">Creating...</span>
+        Create Group
+      </button>
     </form>
   </div>
 </div>
 
+<!-- Modal: Assign Group -->
 <div id="assignGroupModal" class="modal">
   <div class="modal-content card">
-    <span class="close" onclick="closeModal('assignGroupModal')">&times;</span>
+    <button class="modal-close" onclick="closeModal('assignGroupModal')">&times;</button>
     <h3>Assign User to Group</h3>
-    <form id="assign-group-form">
-      <input type="hidden" id="assign-user-id">
-
-      <label>Select Group:</label>
-      <select id="assign-group-id" required>
-        <option value="">Loading groups...</option>
-      </select>
-
-      <button type="submit">Assign</button>
-    </form>
+    <div id="assign-group-form-container">
+      <p>Loading groups...</p>
+    </div>
   </div>
 </div>
 
-<style>
-/* Tabs */
-.tabs {
-  display: flex;
-  gap: 10px;
-  margin-bottom: 1.5rem;
-  border-bottom: 2px solid #ddd;
-}
-
-.tab-btn {
-  padding: 10px 20px;
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: #666;
-}
-
-.tab-btn.active {
-  color: #007bff;
-  border-bottom: 2px solid #007bff;
-  margin-bottom: -2px;
-}
-
-.tab-content {
-  display: none;
-}
-
-.tab-content.active {
-  display: block;
-}
-
-/* Modal */
-.modal {
-  display: none;
-  position: fixed;
-  z-index: 1000;
-  left: 0;
-  top: 0;
-  width: 100%;
-  height: 100%;
-  background-color: rgba(0,0,0,0.4);
-}
-
-.modal-content {
-  margin: 10% auto;
-  width: 90%;
-  max-width: 500px;
-}
-
-.close {
-  color: #aaa;
-  float: right;
-  font-size: 28px;
-  font-weight: bold;
-  cursor: pointer;
-}
-
-.close:hover {
-  color: black;
-}
-
-/* Permission result */
-#permission-result {
-  margin-top: 1rem;
-  padding: 1rem;
-  border-radius: 5px;
-  display: none;
-}
-
-#permission-result.allowed {
-  background: #d4edda;
-  color: #155724;
-  border: 1px solid #c3e6cb;
-  display: block;
-}
-
-#permission-result.denied {
-  background: #f8d7da;
-  color: #721c24;
-  border: 1px solid #f5c6cb;
-  display: block;
-}
-</style>
-
 <script>
-const API_BASE = '/api/admin';
-let authToken = localStorage.getItem('jwt_token') || '';
+  function showTab(tabName) {
+    document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
 
-// Tab management
-function showTab(tabName) {
-  document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
-  document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+    document.getElementById(tabName + '-tab').classList.add('active');
+    event.target.classList.add('active');
 
-  document.getElementById(tabName + '-tab').classList.add('active');
-  event.target.classList.add('active');
-
-  // Load data for the active tab
-  if (tabName === 'users') loadUsers();
-  if (tabName === 'groups') loadGroups();
-}
-
-// Modal management
-function showCreateUserModal() {
-  document.getElementById('createUserModal').style.display = 'block';
-}
-
-function showCreateGroupModal() {
-  document.getElementById('createGroupModal').style.display = 'block';
-}
-
-function showAssignGroupModal(userId) {
-  document.getElementById('assign-user-id').value = userId;
-  document.getElementById('assignGroupModal').style.display = 'block';
-  loadGroupsForSelect();
-}
-
-function closeModal(modalId) {
-  document.getElementById(modalId).style.display = 'none';
-}
-
-// API calls
-async function apiCall(endpoint, method = 'GET', body = null) {
-  const options = {
-    method,
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${authToken}`
+    // Load data for the active tab
+    if (tabName === 'users') {
+      loadUsers();
+    } else if (tabName === 'groups') {
+      loadGroups();
+    } else if (tabName === 'organizations') {
+      loadOrganizations();
     }
-  };
-
-  if (body) options.body = JSON.stringify(body);
-
-  const response = await fetch(API_BASE + endpoint, options);
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(text || response.statusText);
   }
-  return response.json();
-}
 
-// Load users
-async function loadUsers() {
-  try {
-    const users = await apiCall('/users');
-    const tbody = document.getElementById('users-list');
+  function closeModal(modalId) {
+    document.getElementById(modalId).classList.remove('active');
+  }
 
-    if (users.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="6" class="loading">No users found</td></tr>';
+  function showModal(modalId) {
+    document.getElementById(modalId).classList.add('active');
+  }
+
+  function showCreateUserModal() {
+    showModal('createUserModal');
+  }
+
+  function showCreateGroupModal() {
+    showModal('createGroupModal');
+  }
+
+  function updateAssignFormAction(select, userId) {
+    const form = select.closest('form');
+    form.setAttribute('hx-post', `/api/admin/users/${userId}/groups/${select.value}`);
+    htmx.process(form); // Re-process to pick up the new hx-post
+  }
+
+  function removeUserFromGroup(userId, groupName) {
+    if (!confirm(`Remove user ${userId} from group ${groupName}?`)) {
       return;
     }
 
-    tbody.innerHTML = users.map(user => `
-      <tr>
-        <td>${user.user_id}</td>
-        <td>${user.username}</td>
-        <td>${user.email}</td>
-        <td>${(user.groups || []).join(', ') || 'None'}</td>
-        <td>${new Date(user.created_at).toLocaleDateString()}</td>
-        <td>
-          <button onclick="showAssignGroupModal(${user.user_id})" class="btn btn-primary btn-sm">Assign Group</button>
-        </td>
-      </tr>
-    `).join('');
-  } catch (error) {
-    console.error('Error loading users:', error);
-    document.getElementById('users-list').innerHTML =
-      `<tr><td colspan="6" class="alert alert-danger">Error: ${error.message}</td></tr>`;
+    // First, get the group ID from the group name
+    fetch('/api/admin/groups', {
+      credentials: 'include'
+    })
+      .then(r => r.json())
+      .then(groups => {
+        const group = groups.find(g => g.name === groupName);
+        if (!group) {
+          showMessage('Group not found', 'error');
+          return;
+        }
+
+        // Use fetch to delete (HTMX doesn't handle DELETE well with dynamic URLs)
+        fetch(`/api/admin/users/${userId}/groups/${group.group_id}`, {
+          method: 'DELETE',
+          credentials: 'include'
+        })
+          .then(r => {
+            if (r.ok) {
+              loadUsers();
+              showMessage('User removed from group successfully!', 'success');
+            } else {
+              return r.text().then(text => {
+                showMessage('Error removing user from group: ' + text, 'error');
+              });
+            }
+          })
+          .catch(err => {
+            showMessage('Error removing user from group: ' + err.message, 'error');
+          });
+      })
+      .catch(err => {
+        showMessage('Error loading groups: ' + err.message, 'error');
+      });
   }
-}
 
-// Load groups
-async function loadGroups() {
-  try {
-    const groups = await apiCall('/groups');
-    const tbody = document.getElementById('groups-list');
+  function showAssignGroupModal(userId) {
+    const modal = document.getElementById('assignGroupModal');
+    const container = document.getElementById('assign-group-form-container');
 
-    if (groups.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="5" class="loading">No groups found</td></tr>';
-      return;
-    }
-
-    tbody.innerHTML = groups.map(group => `
-      <tr>
-        <td>${group.group_id}</td>
-        <td>${group.name}</td>
-        <td>${group.description || 'N/A'}</td>
-        <td>${new Date(group.created_at).toLocaleDateString()}</td>
-        <td>
-          <button class="btn btn-secondary btn-sm">View Details</button>
-        </td>
-      </tr>
-    `).join('');
-  } catch (error) {
-    console.error('Error loading groups:', error);
-    document.getElementById('groups-list').innerHTML =
-      `<tr><td colspan="5" class="alert alert-danger">Error: ${error.message}</td></tr>`;
-  }
-}
-
-// Load groups for select dropdown
-async function loadGroupsForSelect() {
-  try {
-    const groups = await apiCall('/groups');
-    const select = document.getElementById('assign-group-id');
-    select.innerHTML = groups.map(g => `<option value="${g.group_id}">${g.name}</option>`).join('');
-  } catch (error) {
-    console.error('Error loading groups:', error);
-  }
-}
-
-// Create user form
-document.getElementById('create-user-form').addEventListener('submit', async (e) => {
-  e.preventDefault();
-
-  try {
-    const data = {
-      email: document.getElementById('user-email').value,
-      username: document.getElementById('user-username').value,
-      password: document.getElementById('user-password').value,
-      first_login: document.getElementById('user-first-login').checked
-    };
-
-    await apiCall('/user', 'POST', data);
-    closeModal('createUserModal');
-    loadUsers();
-    alert('User created successfully!');
-  } catch (error) {
-    alert('Error creating user: ' + error.message);
-  }
-});
-
-// Create group form
-document.getElementById('create-group-form').addEventListener('submit', async (e) => {
-  e.preventDefault();
-
-  try {
-    const data = {
-      name: document.getElementById('group-name').value,
-      description: document.getElementById('group-description').value || null
-    };
-
-    await apiCall('/groups', 'POST', data);
-    closeModal('createGroupModal');
-    loadGroups();
-    alert('Group created successfully!');
-  } catch (error) {
-    alert('Error creating group: ' + error.message);
-  }
-});
-
-// Assign group form
-document.getElementById('assign-group-form').addEventListener('submit', async (e) => {
-  e.preventDefault();
-
-  try {
-    const userId = document.getElementById('assign-user-id').value;
-    const groupId = document.getElementById('assign-group-id').value;
-
-    await apiCall(`/users/${userId}/groups/${groupId}`, 'POST');
-    closeModal('assignGroupModal');
-    loadUsers();
-    alert('User assigned to group successfully!');
-  } catch (error) {
-    alert('Error assigning user to group: ' + error.message);
-  }
-});
-
-// Check permission form
-document.getElementById('check-permission-form').addEventListener('submit', async (e) => {
-  e.preventDefault();
-
-  try {
-    const data = {
-      user_id: parseInt(document.getElementById('perm-user-id').value),
-      group_name: document.getElementById('perm-group-name').value,
-      resource: document.getElementById('perm-resource').value,
-      action: document.getElementById('perm-action').value
-    };
-
-    const result = await apiCall('/check-permission', 'POST', data);
-    const resultDiv = document.getElementById('permission-result');
-
-    resultDiv.className = 'permission-result ' + (result.has_permission ? 'allowed' : 'denied');
-    resultDiv.innerHTML = `
-      <h4>${result.has_permission ? 'ALLOWED' : 'DENIED'}</h4>
-      <p>User ID: ${result.user_id}</p>
-      <p>Group: ${result.group_name}</p>
-      <p>Resource: ${result.resource}</p>
-      <p>Action: ${result.action}</p>
-      <p>Permission: <strong>${result.has_permission ? 'Granted' : 'Denied'}</strong></p>
+    fetch('/api/admin/groups', {
+      credentials: 'include'
+    })
+      .then(r => r.json())
+      .then(groups => {
+        container.innerHTML = `
+      <form hx-post="/api/admin/users/${userId}/groups/0"
+            hx-target="#messages"
+            hx-swap="innerHTML"
+            hx-indicator="#assign-group-indicator"
+            hx-on::after-request="handleGroupAssigned(event)">
+        <label>Select Group:</label>
+        <select name="group_id" id="assign-group-select" required onchange="updateAssignFormAction(this, ${userId})">
+          <option value="">Select a group...</option>
+          ${groups.map(g => `<option value="${g.group_id}">${g.name}</option>`).join('')}
+        </select>
+        <button type="submit">
+          <span class="htmx-indicator" id="assign-group-indicator">Assigning...</span>
+          Assign
+        </button>
+      </form>
     `;
-  } catch (error) {
-    alert('Error checking permission: ' + error.message);
+        showModal('assignGroupModal');
+      })
+      .catch(err => {
+        container.innerHTML = `<p class="message message-error">Error loading groups: ${err.message}</p>`;
+      });
   }
-});
 
-// Load initial data
-loadUsers();
+  function handleUserCreated(event) {
+    if (event.detail.successful) {
+      closeModal('createUserModal');
+      loadUsers();
+      showMessage('User created successfully!', 'success');
+      // Reset form
+      document.querySelector('#createUserModal form').reset();
+    } else {
+      const errorText = event.detail.xhr?.responseText || 'Unknown error';
+      showMessage('Error creating user: ' + errorText, 'error');
+    }
+  }
+
+  function handleGroupCreated(event) {
+    if (event.detail.successful) {
+      closeModal('createGroupModal');
+      loadGroups();
+      showMessage('Group created successfully!', 'success');
+      // Reset form
+      document.querySelector('#createGroupModal form').reset();
+    } else {
+      const errorText = event.detail.xhr?.responseText || 'Unknown error';
+      showMessage('Error creating group: ' + errorText, 'error');
+    }
+  }
+
+  function handleGroupAssigned(event) {
+    if (event.detail.successful) {
+      closeModal('assignGroupModal');
+      loadUsers();
+      showMessage('User assigned to group successfully!', 'success');
+    } else {
+      const errorText = event.detail.xhr?.responseText || 'Unknown error';
+      showMessage('Error assigning user to group: ' + errorText, 'error');
+    }
+  }
+
+  function showMessage(text, type) {
+    const messagesDiv = document.getElementById('messages');
+    const messageClass = type === 'success' ? 'message-success' : 'message-error';
+    messagesDiv.innerHTML = `<div class="message ${messageClass}">${text}</div>`;
+    setTimeout(() => {
+      messagesDiv.innerHTML = '';
+    }, 5000);
+  }
+
+  function loadUsers() {
+    const tbody = document.getElementById('users-list');
+    fetch('/api/admin/users', {
+      credentials: 'include'
+    })
+      .then(r => r.json())
+      .then(users => {
+        if (users.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="6" style="text-align: center;">No users found</td></tr>';
+        } else {
+          tbody.innerHTML = users.map(user => {
+            const groups = user.groups || [];
+            const groupsDisplay = groups.length > 0
+              ? groups.map(group => {
+                // Escape group name for JavaScript string
+                const escapedGroup = String(group).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"').replace(/\n/g, '\\n');
+                return `
+              <span style="display: inline-block; margin: 2px; padding: 4px 8px; background: var(--card-bg, #f0f0f0); border-radius: 4px;">
+                ${group}
+                <button onclick="removeUserFromGroup(${user.user_id}, '${escapedGroup}')" 
+                        style="margin-left: 4px; padding: 2px 6px; font-size: 0.8em; background: var(--error-bg, #f8d7da); border: none; border-radius: 3px; cursor: pointer;"
+                        title="Remove from ${group}">×</button>
+              </span>
+            `;
+              }).join('')
+              : 'None';
+
+            return `
+        <tr>
+          <td>${user.user_id}</td>
+          <td>${user.username}</td>
+          <td>${user.email}</td>
+          <td>${groupsDisplay}</td>
+          <td>${new Date(user.created_at).toLocaleDateString()}</td>
+          <td>
+            <button onclick="showAssignGroupModal(${user.user_id})">Assign Group</button>
+          </td>
+        </tr>
+      `;
+          }).join('');
+        }
+      })
+      .catch(err => {
+        tbody.innerHTML = `<tr><td colspan="6" class="message message-error">Error: ${err.message}</td></tr>`;
+      });
+  }
+
+  function loadGroups() {
+    const tbody = document.getElementById('groups-list');
+    fetch('/api/admin/groups', {
+      credentials: 'include'
+    })
+      .then(r => r.json())
+      .then(groups => {
+        if (groups.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="5" style="text-align: center;">No groups found</td></tr>';
+        } else {
+          tbody.innerHTML = groups.map(group => `
+        <tr>
+          <td>${group.group_id}</td>
+          <td>${group.name}</td>
+          <td>${group.description || 'N/A'}</td>
+          <td>${new Date(group.created_at).toLocaleDateString()}</td>
+          <td>-</td>
+        </tr>
+      `).join('');
+        }
+      })
+      .catch(err => {
+        tbody.innerHTML = `<tr><td colspan="5" class="message message-error">Error: ${err.message}</td></tr>`;
+      });
+  }
+
+  function loadOrganizations() {
+    const tbody = document.getElementById('organizations-list');
+    fetch('/api/organizations', {
+      credentials: 'include'
+    })
+      .then(r => r.json())
+      .then(orgs => {
+        if (orgs.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="6" style="text-align: center;">No organizations found</td></tr>';
+        } else {
+          tbody.innerHTML = orgs.map(org => `
+        <tr>
+          <td>${org.organization_id}</td>
+          <td>${org.name}</td>
+          <td>${org.description || 'N/A'}</td>
+          <td>
+            <code id="key-${org.organization_id}">${org.secret_key}</code>
+          </td>
+          <td>${new Date(org.created_at).toLocaleDateString()}</td>
+          <td>
+            <button onclick="rotateKey(${org.organization_id}, '${org.name}')" 
+                    class="btn-danger"
+                    title="Generate new secret key">
+              Rotate Key
+            </button>
+          </td>
+        </tr>
+      `).join('');
+        }
+      })
+      .catch(err => {
+        tbody.innerHTML = `<tr><td colspan="6" class="message message-error">Error: ${err.message}</td></tr>`;
+      });
+  }
+
+  function rotateKey(orgId, orgName) {
+    if (!confirm(`Are you sure you want to rotate the Secret Key for organization '${orgName}'?\nThe old key will stop working immediately.`)) {
+      return;
+    }
+
+    fetch(`/api/organizations/${orgId}/rotate-key`, {
+      method: 'POST',
+      credentials: 'include'
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (data.secret_key) {
+          // Update the key in the URI
+          const codeElement = document.getElementById(`key-${orgId}`);
+          if (codeElement) {
+            codeElement.textContent = data.secret_key;
+            codeElement.style.backgroundColor = '#d4edda';
+            setTimeout(() => { codeElement.style.backgroundColor = ''; }, 2000);
+          }
+          showMessage(`Success! New key for ${orgName}: ${data.secret_key}`, 'success');
+        } else {
+          showMessage('Error rotating key', 'error');
+        }
+      })
+      .catch(err => {
+        showMessage('Error rotating key: ' + err.message, 'error');
+      });
+  }
+
+  // Handle HTMX responses
+  document.body.addEventListener('htmx:afterSwap', function (evt) {
+    if (evt.detail.target.id === 'permission-result') {
+      try {
+        const result = JSON.parse(evt.detail.xhr.responseText);
+        const resultClass = result.has_permission ? 'message-success' : 'message-error';
+        evt.detail.target.innerHTML = `
+        <div class="message ${resultClass}" style="margin-top: 1rem;">
+          <h4>${result.has_permission ? 'ALLOWED' : 'DENIED'}</h4>
+          <p>User ID: ${result.user_id}</p>
+          <p>Group: ${result.group_name}</p>
+          <p>Resource: ${result.resource}</p>
+          <p>Action: ${result.action}</p>
+          <p><strong>Permission: ${result.has_permission ? 'Granted' : 'Denied'}</strong></p>
+        </div>
+      `;
+      } catch (e) {
+        console.error('Error parsing permission result:', e);
+      }
+    }
+  });
+
+  // Load initial data
+  loadUsers();
 </script>
 {% endblock content %}

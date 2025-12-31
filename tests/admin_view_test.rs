@@ -1,11 +1,6 @@
-use axum::{
-    body::Body,
-    http::{Request, StatusCode},
-};
-use tower::ServiceExt;
-
 #[tokio::test]
 async fn test_admin_endpoint_structure() {
+    // Setup
     let endpoints = vec![
         "/api/admin/dashboard",
         "/api/admin/users",
@@ -16,13 +11,16 @@ async fn test_admin_endpoint_structure() {
         "/api/admin/check-permission",
     ];
 
-    for endpoint in endpoints {
-        println!("Endpoint exists: {}", endpoint);
-    }
+    // Act
+    let count = endpoints.len();
+
+    // Assert
+    assert!(count > 0);
 }
 
 #[test]
 fn test_check_permission_request_structure() {
+    // Setup
     use serde_json::json;
 
     let request = json!({
@@ -32,14 +30,20 @@ fn test_check_permission_request_structure() {
         "action": "read"
     });
 
-    assert!(request["user_id"].is_number());
-    assert!(request["group_name"].is_string());
+    // Act
+    let user_id = &request["user_id"];
+    let group_name = &request["group_name"];
+
+    // Assert
+    assert!(user_id.is_number());
+    assert!(group_name.is_string());
     assert!(request["resource"].is_string());
     assert!(request["action"].is_string());
 }
 
 #[test]
 fn test_admin_dashboard_response_structure() {
+    // Setup
     use serde_json::json;
 
     let response = json!({
@@ -54,7 +58,11 @@ fn test_admin_dashboard_response_structure() {
         }
     });
 
-    assert!(response["total_users"].is_number());
+    // Act
+    let total_users = &response["total_users"];
+
+    // Assert
+    assert!(total_users.is_number());
     assert!(response["total_groups"].is_number());
     assert!(response["total_policies"].is_number());
     assert!(response["current_admin"]["groups"].is_array());
@@ -125,7 +133,6 @@ fn test_permission_check_response_structure() {
     assert!(response["has_permission"].is_boolean());
 }
 
-// Test edge cases
 #[test]
 fn test_empty_group_name_invalid() {
     let name = "";
@@ -141,10 +148,10 @@ fn test_invalid_user_id() {
 #[test]
 fn test_wildcard_resource_patterns() {
     let patterns = vec![
-        "*",         // All resources
-        "user:*",    // All user resources
-        "user:self", // Own user resource
-        "admin:*",   // All admin resources
+        "*",
+        "user:*",
+        "user:self",
+        "admin:*",
     ];
 
     for pattern in patterns {
