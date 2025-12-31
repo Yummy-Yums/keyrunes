@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT * FROM settings",
+  "query": "SELECT * FROM settings WHERE key = $1 AND (organization_id = $2 OR organization_id IS NULL) ORDER BY organization_id NULLS LAST LIMIT 1",
   "describe": {
     "columns": [
       {
@@ -40,7 +40,10 @@
       }
     ],
     "parameters": {
-      "Left": []
+      "Left": [
+        "Text",
+        "Int8"
+      ]
     },
     "nullable": [
       false,
@@ -52,5 +55,5 @@
       true
     ]
   },
-  "hash": "1d07614764e4547a26949dbfaf972965e51c1af329c7b3546cb1160c38d657ae"
+  "hash": "da7480e8dd0c1e6d6a3bb5c56f75c66d6078acef3fc228efe13e0d3375de21d1"
 }

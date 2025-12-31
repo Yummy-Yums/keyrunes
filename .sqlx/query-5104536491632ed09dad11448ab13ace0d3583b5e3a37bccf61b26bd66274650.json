@@ -1,12 +1,12 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT * FROM settings WHERE key = $1",
+  "query": "INSERT INTO settings (organization_id, key, value, description) VALUES ($1, $2, $3, $4)\n               RETURNING organization_id, key, value, description",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "settings_id",
-        "type_info": "Int4"
+        "name": "organization_id",
+        "type_info": "Int8"
       },
       {
         "ordinal": 1,
@@ -22,31 +22,22 @@
         "ordinal": 3,
         "name": "description",
         "type_info": "Text"
-      },
-      {
-        "ordinal": 4,
-        "name": "created_at",
-        "type_info": "Timestamptz"
-      },
-      {
-        "ordinal": 5,
-        "name": "updated_at",
-        "type_info": "Timestamptz"
       }
     ],
     "parameters": {
       "Left": [
+        "Int8",
+        "Varchar",
+        "Text",
         "Text"
       ]
     },
     "nullable": [
-      false,
-      false,
-      false,
       true,
       false,
-      false
+      false,
+      true
     ]
   },
-  "hash": "92675f403b210da03cc2779e3c805c25ec41637f1647bb636d7fafb607137768"
+  "hash": "5104536491632ed09dad11448ab13ace0d3583b5e3a37bccf61b26bd66274650"
 }

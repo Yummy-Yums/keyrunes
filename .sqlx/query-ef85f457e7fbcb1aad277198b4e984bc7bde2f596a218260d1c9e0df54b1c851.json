@@ -16,7 +16,7 @@
       {
         "ordinal": 2,
         "name": "token",
-        "type_info": "Varchar"
+        "type_info": "Text"
       },
       {
         "ordinal": 3,
@@ -37,7 +37,7 @@
     "parameters": {
       "Left": [
         "Int8",
-        "Varchar",
+        "Text",
         "Timestamptz"
       ]
     },

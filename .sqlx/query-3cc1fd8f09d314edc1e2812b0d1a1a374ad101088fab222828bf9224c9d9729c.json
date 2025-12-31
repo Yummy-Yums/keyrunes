@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT * FROM settings",
+  "query": "SELECT * FROM settings WHERE key = $1 AND organization_id IS NULL",
   "describe": {
     "columns": [
       {
@@ -40,7 +40,9 @@
       }
     ],
     "parameters": {
-      "Left": []
+      "Left": [
+        "Text"
+      ]
     },
     "nullable": [
       false,
@@ -52,5 +54,5 @@
       true
     ]
   },
-  "hash": "1d07614764e4547a26949dbfaf972965e51c1af329c7b3546cb1160c38d657ae"
+  "hash": "3cc1fd8f09d314edc1e2812b0d1a1a374ad101088fab222828bf9224c9d9729c"
 }
