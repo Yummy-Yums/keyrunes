@@ -20,13 +20,13 @@ async fn setup_db() -> PgPool {
         url
     } else if let Ok(url_str) = env::var("DATABASE_URL") {
         if let Ok(mut url) = Url::parse(&url_str) {
-            url.set_path("keyrunes");
+            url.set_path("keyrunes_test");
             url.to_string()
         } else {
-            "postgres://postgres_user:pass123@localhost:5432/keyrunes".to_string()
+            "postgres://postgres_user:pass123@localhost:5432/keyrunes_test".to_string()
         }
     } else {
-        "postgres://postgres_user:pass123@localhost:5432/keyrunes".to_string()
+        "postgres://postgres_user:pass123@localhost:5432/keyrunes_test".to_string()
     };
 
     let pool = PgPoolOptions::new()

@@ -9,9 +9,8 @@ use keyrunes::constants::DEFAULT_NAMESPACE;
 use keyrunes::domain::user::{Email, Password};
 use keyrunes::group_service::{CreateGroupRequest, GroupService};
 use keyrunes::repository::{
-    CreateSettings, Group, NewGroup, NewOrganization, NewPasswordResetToken, NewUser, Organization,
-    OrganizationRepository, PasswordResetRepository, PasswordResetToken, Policy, Settings,
-    SettingsRepository, User, UserRepository,
+    CreateSettings, Group, NewOrganization, NewUser, Organization, OrganizationRepository, Policy,
+    Settings, User, UserRepository,
 };
 use keyrunes::services::user_service::{RegisterRequest, UserService};
 use keyrunes::user_service::{CreateUserRequest, SettingsService};
@@ -456,6 +455,7 @@ impl keyrunes::repository::PasswordResetRepository for MockPasswordResetReposito
     }
 }
 
+#[allow(dead_code)]
 struct MockOrganizationRepository;
 
 #[async_trait]

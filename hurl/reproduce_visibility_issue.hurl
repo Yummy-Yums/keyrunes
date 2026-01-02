@@ -41,7 +41,7 @@ GET http://localhost:3000/api/admin/groups?org_id={{org_id}}
 Authorization: Bearer {{admin_token}}
 HTTP 200
 [Captures]
-group_id: jsonpath "$[?(@.name=='superadmin')].group_id" nth 0
+group_id: jsonpath "$[?(@.name=='admin')].group_id" nth 0
 
 # Assign "visbuguser" to "superadmin" group of VisBugOrg
 POST http://localhost:3000/api/admin/users/{{user_id}}/groups/{{group_id}}?org_id={{org_id}}

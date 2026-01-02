@@ -35,15 +35,15 @@ HTTP 201
 [Captures]
 admin_user_id: jsonpath "$.user_id"
 
-# Get "superadmin" group ID
+# Get "admin" group ID
 GET http://localhost:3000/api/admin/groups?org_id={{org_id}}
 Authorization: Bearer {{admin_token}}
 HTTP 200
 [Captures]
-superadmin_group_id: jsonpath "$[?(@.name=='superadmin')].group_id" nth 0
+admin_group_id: jsonpath "$[?(@.name=='admin')].group_id" nth 0
 
-# Assign "tenantadmin" to "superadmin"
-POST http://localhost:3000/api/admin/users/{{admin_user_id}}/groups/{{superadmin_group_id}}?org_id={{org_id}}
+# Assign "tenantadmin" to "admin"
+POST http://localhost:3000/api/admin/users/{{admin_user_id}}/groups/{{admin_group_id}}?org_id={{org_id}}
 Authorization: Bearer {{admin_token}}
 HTTP 200
 
@@ -112,4 +112,4 @@ GET http://localhost:3000/api/admin/users?org_id={{org_id}}
 Authorization: Bearer {{regular_user_token}}
 HTTP 403
 [Asserts]
-body contains "Superadmin access required"
+body contains "Superadmin or Admin access required"

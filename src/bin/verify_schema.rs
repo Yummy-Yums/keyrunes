@@ -7,7 +7,7 @@ async fn main() -> anyhow::Result<()> {
         env::var("DATABASE_URL").unwrap_or_else(|_| {
             "postgres://postgres_user:pass123@localhost:5432/keyrunes".to_string()
         }),
-        "postgres://postgres_user:pass123@localhost:5432/keyrunes".to_string(),
+        "postgres://postgres_user:pass123@localhost:5432/keyrunes_test".to_string(),
     ];
 
     for url in urls {

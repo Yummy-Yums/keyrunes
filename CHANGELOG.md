@@ -3,11 +3,17 @@
 ### 🚀 Features
 
 - Add multi tenant support and organizations
-## [0.2.0] - 2025-11-29
+- Add multi tenant with support to multi schemas in database, refactor api, cli and views for this format
+
+### 💼 Other
+
+- Add sqlx cache for ci
+- Prepare queries offline to docker image and fix tests
 
 ### ⚙️ Miscellaneous Tasks
 
 - Update changelog
+- Add changelogs
 ## [0.1.1] - 2025-11-29
 
 ### 🚀 Features

@@ -21,10 +21,10 @@ async fn setup_test_db() -> PgPool {
             url.set_path("keyrunes");
             url.to_string()
         } else {
-            "postgres://postgres_user:pass123@localhost:5432/keyrunes".to_string()
+            "postgres://postgres_user:pass123@localhost:5432/keyrunes_test".to_string()
         }
     } else {
-        "postgres://postgres_user:pass123@localhost:5432/keyrunes".to_string()
+        "postgres://postgres_user:pass123@localhost:5432/keyrunes_test".to_string()
     };
 
     let pool = PgPoolOptions::new()

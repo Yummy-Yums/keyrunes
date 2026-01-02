@@ -1,5 +1,5 @@
 # Build stage
-FROM rust:latest as builder
+FROM rust:latest AS builder
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \

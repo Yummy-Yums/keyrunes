@@ -45,7 +45,7 @@ async fn create_test_app() -> Router {
     let user_repo = Arc::new(PgUserRepository::new(pool.clone()));
     let group_repo = Arc::new(PgGroupRepository::new(pool.clone()));
     let password_reset_repo = Arc::new(PgPasswordResetRepository::new(pool.clone()));
-    let org_repo = Arc::new(PgOrganizationRepository::new(pool.clone()));
+    let _org_repo = Arc::new(PgOrganizationRepository::new(pool.clone()));
     let jwt_service = Arc::new(JwtService::new("test_secret"));
     let settings_repo = Arc::new(PgSettingsRepository::new(pool.clone()));
     let settings_service = Arc::new(SettingsService::new(settings_repo));

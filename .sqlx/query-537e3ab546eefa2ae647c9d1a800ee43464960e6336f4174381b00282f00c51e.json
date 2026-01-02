@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "TRUNCATE TABLE policies, user_policies, users, organizations CASCADE",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "537e3ab546eefa2ae647c9d1a800ee43464960e6336f4174381b00282f00c51e"
+}
