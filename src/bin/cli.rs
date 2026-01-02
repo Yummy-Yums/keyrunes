@@ -648,6 +648,11 @@ mod tests {
             .await
             .expect("Failed to connect to DB");
 
+        sqlx::migrate!()
+            .run(&pool)
+            .await
+            .expect("Failed to migrate");
+
         sqlx::query("TRUNCATE TABLE organizations, users, groups, user_groups, settings, password_reset_tokens CASCADE")
             .execute(&pool)
             .await
@@ -1272,9 +1277,10 @@ mod tests {
         assert!(stdout.contains("http://localhost:3000"));
     }
 
-    #[test]
+    #[tokio::test]
     #[serial]
-    fn test_recover_user_with_url_unsuccessfully() {
+    async fn test_recover_user_with_url_unsuccessfully() {
+        setup_cli_test_db().await;
         let db_url = std::env::var("TEST_DATABASE_URL").unwrap_or_else(|_| {
             std::env::var("DATABASE_URL").unwrap_or(
                 "postgres://postgres_user:pass123@localhost:5432/keyrunes_test".to_string(),
@@ -1294,6 +1300,6 @@ mod tests {
 
         // Assert
         assert!(!output.status.success());
-        assert!(stderr.contains(format!("Error: User {} not found", err).as_str()));
+        assert!(stderr.contains(format!("User {} not found", err).as_str()));
     }
 }
