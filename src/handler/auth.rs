@@ -9,8 +9,9 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
+use crate::constants::{ADMIN_GROUP, SUPERADMIN_GROUP};
 use crate::handler::errors::ErrorResponse;
-use crate::repository::sqlx_impl::PgOrganizationRepository;
+use crate::repository::sqlx_impl::{PgGroupRepository, PgOrganizationRepository};
 use crate::services::jwt_service::{Claims, JwtService};
 use crate::services::organization_service::OrganizationService;
 use uuid::Uuid;
@@ -22,6 +23,8 @@ pub struct AuthenticatedUser {
     pub email: String,
     pub username: String,
     pub groups: Vec<String>,
+    pub namespace: String,
+    pub organization_id: i64,
 }
 
 impl From<Claims> for AuthenticatedUser {
@@ -31,6 +34,8 @@ impl From<Claims> for AuthenticatedUser {
             email: claims.email,
             username: claims.username,
             groups: claims.groups,
+            namespace: claims.namespace,
+            organization_id: claims.organization_id,
         }
     }
 }
@@ -107,16 +112,18 @@ pub fn require_groups(
     }
 }
 
-/// Middleware that requires superadmin group
+/// Middleware that requires superadmin or admin group
 pub async fn require_superadmin(
     Extension(user): Extension<AuthenticatedUser>,
     request: Request,
     next: Next,
 ) -> Response {
-    if user.groups.contains(&"superadmin".to_string()) {
+    if user.groups.contains(&SUPERADMIN_GROUP.to_string())
+        || user.groups.contains(&ADMIN_GROUP.to_string())
+    {
         next.run(request).await
     } else {
-        ErrorResponse::forbidden("Superadmin access required").into_response()
+        ErrorResponse::forbidden("Superadmin or Admin access required").into_response()
     }
 }
 
@@ -130,7 +137,9 @@ pub enum ApiAuthContext {
 
 /// Middleware that requires X-Organization-Key header OR superadmin permissions
 pub async fn require_org_key_or_superadmin(
-    Extension(org_service): Extension<Arc<OrganizationService<PgOrganizationRepository>>>,
+    Extension(org_service): Extension<
+        Arc<OrganizationService<PgOrganizationRepository, PgGroupRepository>>,
+    >,
     Extension(jwt_service): Extension<Arc<JwtService>>,
     headers: HeaderMap,
     mut request: Request,
@@ -169,7 +178,7 @@ pub async fn require_org_key_or_superadmin(
         && let Ok(claims) = jwt_service.verify_token(&token)
     {
         let user = AuthenticatedUser::from(claims);
-        if user.groups.contains(&"superadmin".to_string()) {
+        if user.groups.contains(&SUPERADMIN_GROUP.to_string()) {
             request
                 .extensions_mut()
                 .insert(ApiAuthContext::Superadmin(user));
@@ -182,8 +191,6 @@ pub async fn require_org_key_or_superadmin(
 }
 
 /// Extract Bearer token from Authorization header or cookies
-///
-/// FIXED: Safe cookie parsing using strip_prefix instead of direct indexing
 fn extract_bearer_token(headers: &HeaderMap) -> Option<String> {
     if let Some(auth_header) = headers.get("authorization")
         && let Ok(auth_str) = auth_header.to_str()
@@ -213,6 +220,7 @@ fn extract_bearer_token(headers: &HeaderMap) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::constants::USERS_GROUP;
     use axum::http::{HeaderMap, HeaderValue};
 
     #[test]
@@ -285,7 +293,9 @@ mod tests {
             sub: "123".to_string(),
             email: "test@example.com".to_string(),
             username: "testuser".to_string(),
-            groups: vec!["users".to_string(), "admin".to_string()],
+            groups: vec![USERS_GROUP.to_string(), "admin".to_string()],
+            namespace: "test_ns".to_string(),
+            organization_id: 1,
             exp: 1234567890,
             iat: 1234567890,
             iss: "keyrunes".to_string(),
@@ -295,6 +305,7 @@ mod tests {
         assert_eq!(user.user_id, 123);
         assert_eq!(user.email, "test@example.com");
         assert_eq!(user.username, "testuser");
-        assert_eq!(user.groups, vec!["users", "admin"]);
+        assert_eq!(user.groups, vec![USERS_GROUP, "admin"]);
+        assert_eq!(user.namespace, "test_ns");
     }
 }

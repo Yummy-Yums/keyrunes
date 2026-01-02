@@ -7,19 +7,10 @@
 
 {% block content %}
 <section class="card">
-    <form action="/profile" method="post">
+    <div id="messages"></div>
 
-        {% if error %}
-        <div class="message message-error">
-            {{ error }}
-        </div>
-        {% endif %}
-
-        {% if success %}
-        <div class="message message-success">
-            {{ success }}
-        </div>
-        {% endif %}
+    <form hx-patch="/api/user/profile" hx-swap="none" hx-indicator="#save-indicator" hx-ext="json-enc"
+        hx-on::after-request="handleProfileUpdate(event)">
 
         <div class="form-group">
             <label for="username">Username</label>
@@ -31,8 +22,32 @@
             <input type="email" id="email" name="email" value="{{ user.email }}" required>
         </div>
 
-        <button type="submit" class="btn btn-primary">Save Changes</button>
-        <a href="/dashboard" class="btn btn-secondary">Cancel</a>
+        <button type="submit" class="btn btn-primary">
+            <span class="htmx-indicator" id="save-indicator">Saving...</span>
+            Save Changes
+        </button>
+        <a href="/dashboard" class="btn btn-secondary">Back to Dashboard</a>
     </form>
 </section>
+
+<script>
+    function handleProfileUpdate(event) {
+        const messageDiv = document.getElementById('messages');
+        if (event.detail.successful) {
+            try {
+                // Update the form values just in case
+                const user = JSON.parse(event.detail.xhr.responseText);
+                document.getElementById('username').value = user.username;
+                document.getElementById('email').value = user.email;
+
+                messageDiv.innerHTML = `<div class="message message-success">Profile updated successfully!</div>`;
+            } catch (e) {
+                messageDiv.innerHTML = `<div class="message message-success">Profile updated successfully!</div>`;
+            }
+        } else {
+            const errorText = event.detail.xhr?.responseText || 'Unknown error';
+            messageDiv.innerHTML = `<div class="message message-error">Error: ${errorText}</div>`;
+        }
+    }
+</script>
 {% endblock content %}

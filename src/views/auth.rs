@@ -1,7 +1,9 @@
 use crate::repository::sqlx_impl::{
     PgGroupRepository, PgPasswordResetRepository, PgSettingsRepository, PgUserRepository,
 };
-use crate::services::user_service::{ChangePasswordRequest, RegisterRequest, UserService};
+use crate::services::user_service::{
+    ChangePasswordRequest, RegisterRequest, UpdateProfileRequest, UserService,
+};
 use axum::{
     extract::{Extension, Form, Query},
     http::{HeaderMap, StatusCode},
@@ -24,12 +26,19 @@ pub struct RegisterForm {
     pub username: String,
     pub password: String,
     pub first_login: bool,
+    #[serde(default = "default_namespace")]
+    pub namespace: String,
+}
+
+fn default_namespace() -> String {
+    "public".to_string()
 }
 
 #[derive(serde::Deserialize)]
 pub struct LoginForm {
     pub identity: String,
     pub password: String,
+    pub namespace: String,
 }
 
 #[derive(serde::Deserialize)]
@@ -66,7 +75,7 @@ pub async fn register_post(
         first_login: Some(payload.first_login),
     };
 
-    match service.register(req).await {
+    match service.register(req, &payload.namespace).await {
         Ok(auth_response) => {
             let mut ctx = Context::new();
             ctx.insert("title", "Registration Successful");
@@ -117,7 +126,10 @@ pub async fn login_post(
     Extension(tmpl): Extension<tera::Tera>,
     Form(payload): Form<LoginForm>,
 ) -> impl IntoResponse {
-    match service.login(payload.identity, payload.password).await {
+    match service
+        .login(payload.identity, payload.password, &payload.namespace)
+        .await
+    {
         Ok(auth_response) => {
             let cookie_value = format!(
                 "jwt_token={}; Path=/; HttpOnly; SameSite=Lax; Max-Age=3600",
@@ -180,7 +192,14 @@ pub async fn change_password_post(
         }
     };
 
-    let user_id = match service.jwt_service.extract_user_id(&token) {
+    let claims = match service.jwt_service.verify_token(&token) {
+        Ok(claims) => claims,
+        Err(_) => {
+            return Redirect::to("/login").into_response();
+        }
+    };
+
+    let user_id = match claims.sub.parse::<i64>() {
         Ok(id) => id,
         Err(_) => {
             return Redirect::to("/login").into_response();
@@ -200,7 +219,10 @@ pub async fn change_password_post(
         new_password: payload.new_password,
     };
 
-    match service.change_password(user_id, req).await {
+    match service
+        .change_password(user_id, req, &claims.namespace)
+        .await
+    {
         Ok(_) => Redirect::to("/dashboard").into_response(),
         Err(e) => {
             let mut ctx = Context::new();
@@ -299,13 +321,23 @@ pub async fn profile_post(
         None => return Redirect::to("/login").into_response(),
     };
 
-    let user_id = match service.jwt_service.extract_user_id(&token) {
+    let claims = match service.jwt_service.verify_token(&token) {
+        Ok(claims) => claims,
+        Err(_) => return Redirect::to("/login").into_response(),
+    };
+
+    let user_id = match claims.sub.parse::<i64>() {
         Ok(id) => id,
         Err(_) => return Redirect::to("/login").into_response(),
     };
 
+    let update_req = UpdateProfileRequest {
+        username: Some(payload.username),
+        email: Some(payload.email),
+    };
+
     match service
-        .update_user_profile(user_id, payload.email, payload.username)
+        .update_profile(user_id, update_req, &claims.namespace)
         .await
     {
         Ok(_) => match service.get_user_by_token(&token).await {

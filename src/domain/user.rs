@@ -48,7 +48,7 @@ impl TryFrom<&str> for Password {
     type Error = anyhow::Error;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
-        if value.len() < 8 {
+        if value.len() < crate::constants::MIN_PASSWORD_LENGTH {
             anyhow::bail!("password too short");
         }
 

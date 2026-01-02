@@ -6,6 +6,7 @@ use uuid::Uuid;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct CreateGroupRequest {
+    #[serde(deserialize_with = "crate::api::deserializers::deserialize_string_or_number")]
     pub organization_id: i64,
     pub name: String,
     pub description: Option<String>,
@@ -37,14 +38,16 @@ pub struct GroupService<G: GroupRepository> {
 }
 
 impl<G: GroupRepository> GroupService<G> {
+    /// Creates a new `GroupService` instance.
     pub fn new(repo: Arc<G>) -> Self {
         Self { repo }
     }
 
-    pub async fn create_group(&self, req: CreateGroupRequest) -> Result<Group> {
+    /// Creates a new group.
+    pub async fn create_group(&self, req: CreateGroupRequest, namespace: &str) -> Result<Group> {
         if self
             .repo
-            .find_by_name(&req.name, req.organization_id)
+            .find_by_name(&req.name, req.organization_id, namespace)
             .await?
             .is_some()
         {
@@ -58,33 +61,41 @@ impl<G: GroupRepository> GroupService<G> {
             description: req.description,
         };
 
-        self.repo.insert_group(new_group).await
+        self.repo.insert_group(new_group, namespace).await
     }
 
-    #[allow(dead_code)]
+    /// Finds a group by its name within an organization.
     pub async fn get_group_by_name(
         &self,
         name: &str,
         organization_id: i64,
+        namespace: &str,
     ) -> Result<Option<Group>> {
-        self.repo.find_by_name(name, organization_id).await
+        self.repo
+            .find_by_name(name, organization_id, namespace)
+            .await
     }
 
-    #[allow(dead_code)]
-    pub async fn get_group_by_id(&self, group_id: i64) -> Result<Option<Group>> {
-        self.repo.find_by_id(group_id).await
+    /// Finds a group by its ID.
+    pub async fn get_group_by_id(&self, group_id: i64, namespace: &str) -> Result<Option<Group>> {
+        self.repo.find_by_id(group_id, namespace).await
     }
 
-    pub async fn list_groups(&self, organization_id: i64) -> Result<Vec<Group>> {
-        self.repo.list_groups(organization_id).await
+    /// Lists all groups in an organization.
+    pub async fn list_groups(&self, organization_id: i64, namespace: &str) -> Result<Vec<Group>> {
+        self.repo.list_groups(organization_id, namespace).await
     }
 
-    #[allow(dead_code)]
-    pub async fn get_group_with_policies(&self, group_id: i64) -> Result<Option<GroupResponse>> {
-        let group = self.repo.find_by_id(group_id).await?;
+    /// Retrieves a group along with its associated policies.
+    pub async fn get_group_with_policies(
+        &self,
+        group_id: i64,
+        namespace: &str,
+    ) -> Result<Option<GroupResponse>> {
+        let group = self.repo.find_by_id(group_id, namespace).await?;
 
         if let Some(group) = group {
-            let policies = self.repo.get_group_policies(group_id).await?;
+            let policies = self.repo.get_group_policies(group_id, namespace).await?;
             let policy_responses: Vec<PolicyResponse> = policies
                 .into_iter()
                 .map(|p| PolicyResponse {
@@ -110,29 +121,40 @@ impl<G: GroupRepository> GroupService<G> {
         }
     }
 
+    /// Assigns a user to a group.
     pub async fn assign_user_to_group(
         &self,
         user_id: i64,
         group_id: i64,
         assigned_by: Option<i64>,
+        namespace: &str,
     ) -> Result<()> {
-        if self.repo.find_by_id(group_id).await?.is_none() {
+        if self.repo.find_by_id(group_id, namespace).await?.is_none() {
             return Err(anyhow!("group not found"));
         }
 
         self.repo
-            .assign_user_to_group(user_id, group_id, assigned_by)
+            .assign_user_to_group(user_id, group_id, assigned_by, namespace)
             .await
     }
 
-    pub async fn remove_user_from_group(&self, user_id: i64, group_id: i64) -> Result<()> {
-        self.repo.remove_user_from_group(user_id, group_id).await
+    /// Removes a user from a group.
+    pub async fn remove_user_from_group(
+        &self,
+        user_id: i64,
+        group_id: i64,
+        namespace: &str,
+    ) -> Result<()> {
+        self.repo
+            .remove_user_from_group(user_id, group_id, namespace)
+            .await
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::constants::DEFAULT_NAMESPACE;
     use crate::repository::{Group, Policy};
     use anyhow::Result;
     use async_trait::async_trait;
@@ -155,7 +177,12 @@ mod tests {
 
     #[async_trait]
     impl GroupRepository for MockGroupRepository {
-        async fn find_by_name(&self, name: &str, organization_id: i64) -> Result<Option<Group>> {
+        async fn find_by_name(
+            &self,
+            name: &str,
+            organization_id: i64,
+            _namespace: &str,
+        ) -> Result<Option<Group>> {
             let groups = self.groups.lock().unwrap();
             Ok(groups
                 .iter()
@@ -163,12 +190,12 @@ mod tests {
                 .cloned())
         }
 
-        async fn find_by_id(&self, group_id: i64) -> Result<Option<Group>> {
+        async fn find_by_id(&self, group_id: i64, _namespace: &str) -> Result<Option<Group>> {
             let groups = self.groups.lock().unwrap();
             Ok(groups.iter().find(|g| g.group_id == group_id).cloned())
         }
 
-        async fn insert_group(&self, new_group: NewGroup) -> Result<Group> {
+        async fn insert_group(&self, new_group: NewGroup, _namespace: &str) -> Result<Group> {
             let mut groups = self.groups.lock().unwrap();
             let group = Group {
                 group_id: (groups.len() + 1) as i64,
@@ -183,7 +210,7 @@ mod tests {
             Ok(group)
         }
 
-        async fn list_groups(&self, organization_id: i64) -> Result<Vec<Group>> {
+        async fn list_groups(&self, organization_id: i64, _namespace: &str) -> Result<Vec<Group>> {
             let groups = self.groups.lock().unwrap();
             Ok(groups
                 .iter()
@@ -197,37 +224,54 @@ mod tests {
             user_id: i64,
             group_id: i64,
             _assigned_by: Option<i64>,
+            _namespace: &str,
         ) -> Result<()> {
             let mut user_groups = self.user_groups.lock().unwrap();
             user_groups.push((user_id, group_id));
             Ok(())
         }
 
-        async fn remove_user_from_group(&self, user_id: i64, group_id: i64) -> Result<()> {
+        async fn remove_user_from_group(
+            &self,
+            user_id: i64,
+            group_id: i64,
+            _namespace: &str,
+        ) -> Result<()> {
             let mut user_groups = self.user_groups.lock().unwrap();
             user_groups.retain(|(uid, gid)| !(*uid == user_id && *gid == group_id));
             Ok(())
         }
 
-        async fn get_group_policies(&self, _group_id: i64) -> Result<Vec<Policy>> {
+        async fn get_group_policies(
+            &self,
+            _group_id: i64,
+            _namespace: &str,
+        ) -> Result<Vec<Policy>> {
             Ok(Vec::new())
         }
     }
 
     #[tokio::test]
     async fn test_create_group() {
+        // Setup
         let repo = Arc::new(MockGroupRepository::new());
         let service = GroupService::new(repo);
 
         let req = CreateGroupRequest {
-            organization_id: 1,
+            organization_id: crate::constants::DEFAULT_ORGANIZATION_ID,
             name: "test_group".to_string(),
             description: Some("Test group description".to_string()),
         };
 
-        let group = service.create_group(req).await.unwrap();
+        // Act
+        let group = service.create_group(req, DEFAULT_NAMESPACE).await.unwrap();
+
+        // Assert
         assert_eq!(group.name, "test_group");
-        assert_eq!(group.organization_id, 1);
+        assert_eq!(
+            group.organization_id,
+            crate::constants::DEFAULT_ORGANIZATION_ID
+        );
         assert_eq!(
             group.description,
             Some("Test group description".to_string())
@@ -236,18 +280,25 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_duplicate_group() {
+        // Setup
         let repo = Arc::new(MockGroupRepository::new());
         let service = GroupService::new(repo);
 
         let req = CreateGroupRequest {
-            organization_id: 1,
+            organization_id: crate::constants::DEFAULT_ORGANIZATION_ID,
             name: "duplicate_group".to_string(),
             description: None,
         };
 
-        service.create_group(req.clone()).await.unwrap();
+        service
+            .create_group(req.clone(), DEFAULT_NAMESPACE)
+            .await
+            .unwrap();
 
-        let result = service.create_group(req).await;
+        // Act
+        let result = service.create_group(req, DEFAULT_NAMESPACE).await;
+
+        // Assert
         assert!(result.is_err());
         assert_eq!(result.unwrap_err().to_string(), "group name already exists");
     }

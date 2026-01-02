@@ -144,6 +144,15 @@
       color: var(--error-text, #721c24);
       border: 1px solid var(--error-border, #f5c6cb);
     }
+
+    button,
+    .btn,
+    .tab-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+    }
   </style>
 </head>
 
@@ -169,68 +178,6 @@
   </footer>
 
   <script>
-    // Unified HTMX configuration for API calls
-    document.body.addEventListener('htmx:configRequest', function (evt) {
-      const path = evt.detail.path;
-      const verb = evt.detail.verb.toLowerCase();
-
-      // If it's an API call and not a GET, try to prepare for JSON submission
-      if (path.startsWith('/api/') && verb !== 'get') {
-        const elt = evt.detail.elt;
-        if (elt && (elt.tagName === 'FORM' || elt.closest('form'))) {
-          const form = elt.tagName === 'FORM' ? elt : elt.closest('form');
-
-          const formData = new FormData(form);
-          const jsonData = {};
-
-          formData.forEach((value, key) => {
-            // Special handling for common field patterns
-            if (value === '' && (key === 'description' || key.includes('desc'))) {
-              jsonData[key] = null;
-            } else if (key === 'user_id' || key === 'group_id' || key === 'organization_id') {
-              const num = parseInt(value, 10);
-              jsonData[key] = isNaN(num) ? value : num;
-            } else if (value === 'true' || value === 'false') {
-              jsonData[key] = value === 'true';
-            } else {
-              jsonData[key] = value;
-            }
-          });
-
-          // Set JSON headers
-          evt.detail.headers['Content-Type'] = 'application/json';
-
-          // Store the JSON object in parameters to be used in beforeRequest
-          evt.detail.parameters = jsonData;
-
-          // Tell HTMX not to add these to the URL
-          evt.detail.useUrlParams = false;
-        }
-      }
-    });
-
-    // Finalize JSON submission by overriding XHR send
-    document.body.addEventListener('htmx:beforeRequest', function (evt) {
-      const path = evt.detail.path;
-      const verb = evt.detail.verb.toLowerCase();
-
-      if (path.startsWith('/api/') && verb !== 'get') {
-        const parameters = evt.detail.requestConfig.parameters;
-
-        // If parameters is an object, it means we prepared it for JSON in configRequest
-        if (parameters && typeof parameters === 'object' && !(parameters instanceof FormData)) {
-          const xhr = evt.detail.xhr;
-          const originalSend = xhr.send;
-          const jsonBody = JSON.stringify(parameters);
-
-          xhr.send = function () {
-            // We use the raw XMLHttpRequest.prototype.send to avoid potential recursion or interference
-            XMLHttpRequest.prototype.send.call(this, jsonBody);
-          };
-        }
-      }
-    });
-
     // Close modals on outside click
     document.addEventListener('click', function (e) {
       if (e.target.classList.contains('modal')) {

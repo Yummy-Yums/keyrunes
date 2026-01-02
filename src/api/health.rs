@@ -168,7 +168,8 @@ pub fn test_jwt_service() -> Result<(), Box<dyn std::error::Error>> {
     use crate::services::jwt_service::JwtService;
 
     let jwt_service = JwtService::new("0123456789ABCDEF0123456789ABCDEF");
-    let token = jwt_service.generate_token(1, "test@example.com", "test", vec![])?;
+    let token =
+        jwt_service.generate_token(1, "test@example.com", "test", vec![], "health_check", 1)?;
     jwt_service.verify_token(&token)?;
     Ok(())
 }

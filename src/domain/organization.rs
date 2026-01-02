@@ -8,6 +8,8 @@ pub struct Organization {
     pub name: String,
     pub description: Option<String>,
     pub secret_key: Uuid,
+    pub namespace: String,
+    pub base_url: Option<String>,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
@@ -16,4 +18,6 @@ pub struct Organization {
 pub struct NewOrganization {
     pub name: String,
     pub description: Option<String>,
+    pub namespace: String,
+    pub base_url: Option<String>,
 }

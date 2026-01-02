@@ -1,3 +1,4 @@
+use keyrunes::constants::DEFAULT_NAMESPACE;
 use keyrunes::repository::sqlx_impl::{PgPolicyRepository, PgUserRepository};
 use keyrunes::repository::{NewUser, PolicyEffect, UserRepository};
 use keyrunes::services::policy_service::{CreatePolicyRequest, PolicyService};
@@ -19,13 +20,13 @@ async fn setup_db() -> PgPool {
         url
     } else if let Ok(url_str) = env::var("DATABASE_URL") {
         if let Ok(mut url) = Url::parse(&url_str) {
-            url.set_path("keyrunes_test");
+            url.set_path("keyrunes");
             url.to_string()
         } else {
-            "postgres://postgres_user:pass123@localhost:5432/keyrunes_test".to_string()
+            "postgres://postgres_user:pass123@localhost:5432/keyrunes".to_string()
         }
     } else {
-        "postgres://postgres_user:pass123@localhost:5432/keyrunes_test".to_string()
+        "postgres://postgres_user:pass123@localhost:5432/keyrunes".to_string()
     };
 
     let pool = PgPoolOptions::new()
@@ -41,7 +42,7 @@ async fn setup_db() -> PgPool {
         .await
         .expect("Failed to clean up tables");
 
-    sqlx::query!("INSERT INTO organizations (organization_id, name, external_id, secret_key, description) VALUES (1, 'Test Org', $1, $2, 'Default Test Org')", Uuid::new_v4(), Uuid::new_v4())
+    sqlx::query!("INSERT INTO organizations (organization_id, name, external_id, secret_key, description, namespace) VALUES (1, 'Test Org', $1, $2, 'Default Test Org', $3)", Uuid::new_v4(), Uuid::new_v4(), DEFAULT_NAMESPACE)
         .execute(&pool)
         .await
         .expect("Failed to insert default organization");
@@ -68,14 +69,17 @@ async fn test_create_and_get_policy() {
     };
 
     // Act
-    let created = service.create_policy(req.clone()).await.unwrap();
+    let created = service
+        .create_policy(req.clone(), DEFAULT_NAMESPACE)
+        .await
+        .unwrap();
 
     // Assert
     assert_eq!(created.name, req.name);
     assert_eq!(created.resource, req.resource);
 
     let found = service
-        .get_policy_by_name("test_policy", 1)
+        .get_policy_by_name("test_policy", 1, DEFAULT_NAMESPACE)
         .await
         .unwrap()
         .unwrap();
@@ -100,10 +104,13 @@ async fn test_create_duplicate_policy_name() {
         conditions: None,
     };
 
-    service.create_policy(req.clone()).await.unwrap();
+    service
+        .create_policy(req.clone(), DEFAULT_NAMESPACE)
+        .await
+        .unwrap();
 
     // Act
-    let result = service.create_policy(req).await;
+    let result = service.create_policy(req, DEFAULT_NAMESPACE).await;
 
     // Assert
     assert!(result.is_err());
@@ -126,7 +133,10 @@ async fn test_assign_policy_and_evaluate_permission() {
         first_login: false,
         organization_id: 1,
     };
-    let user = user_repo.insert_user(new_user).await.unwrap();
+    let user = user_repo
+        .insert_user(new_user, DEFAULT_NAMESPACE)
+        .await
+        .unwrap();
 
     let req = CreatePolicyRequest {
         organization_id: 1,
@@ -137,16 +147,19 @@ async fn test_assign_policy_and_evaluate_permission() {
         effect: PolicyEffect::Allow,
         conditions: None,
     };
-    let policy = service.create_policy(req).await.unwrap();
+    let policy = service.create_policy(req, DEFAULT_NAMESPACE).await.unwrap();
 
     // Act
     service
-        .assign_policy_to_user(user.user_id, policy.policy_id, None)
+        .assign_policy_to_user(user.user_id, policy.policy_id, None, DEFAULT_NAMESPACE)
         .await
         .unwrap();
 
     // Act
-    let user_policies = user_repo.get_user_policies(user.user_id).await.unwrap();
+    let user_policies = user_repo
+        .get_user_policies(user.user_id, DEFAULT_NAMESPACE)
+        .await
+        .unwrap();
 
     // Assert
     assert!(
@@ -188,11 +201,17 @@ async fn test_list_policies() {
         conditions: None,
     };
 
-    service.create_policy(req1).await.unwrap();
-    service.create_policy(req2).await.unwrap();
+    service
+        .create_policy(req1, DEFAULT_NAMESPACE)
+        .await
+        .unwrap();
+    service
+        .create_policy(req2, DEFAULT_NAMESPACE)
+        .await
+        .unwrap();
 
     // Act
-    let list = service.list_policies(1).await.unwrap();
+    let list = service.list_policies(1, DEFAULT_NAMESPACE).await.unwrap();
 
     // Assert
     assert_eq!(list.len(), 2);

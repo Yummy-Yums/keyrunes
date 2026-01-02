@@ -2,7 +2,8 @@
 POST {{BASE_URL}}/api/login
 {
     "identity": "admin@example.com",
-    "password": "Admin123"
+    "password": "Admin123",
+    "namespace": "public"
 }
 HTTP 200
 [Captures]

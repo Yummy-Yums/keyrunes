@@ -1,6 +1,6 @@
 .PHONY: help db-create db-drop db-reset migrate run build test test-unit test-hurl test-all clean dev setup superadmin sqlx-prepare check lint
 
-# Variáveis
+# Variables
 DATABASE_URL ?= postgres://postgres_user:pass123@localhost:5432/keyrunes
 ADMIN_EMAIL ?= admin@example.com
 ADMIN_USERNAME ?= admin
@@ -11,189 +11,198 @@ help:
 	@echo ""
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
 	@echo ""
-	@echo "Variáveis de ambiente:"
+	@echo "Environment variables:"
 	@echo "  DATABASE_URL=$(DATABASE_URL)"
 	@echo "  ADMIN_EMAIL=$(ADMIN_EMAIL)"
 	@echo "  ADMIN_USERNAME=$(ADMIN_USERNAME)"
 
 ## Database
-db-create: ## Cria o banco de dados
-	@echo "📦 Criando banco de dados..."
+db-create: ## Creates the database
+	@echo "Creating database..."
 	sqlx database create
 
-db-drop: ## Remove o banco de dados (CUIDADO: apaga todos os dados!)
-	@echo "🗑️  Removendo banco de dados..."
+db-drop: ## Removes the database (CAUTION: deletes all data!)
+	@echo "Removing database..."
 	sqlx database drop -y
 
-db-reset: db-drop db-create migrate ## Reseta o banco (drop + create + migrate)
-	@echo "✅ Banco resetado com sucesso!"
+db-reset: db-drop db-create migrate ## Resets the database (drop + create + migrate)
+	@echo "Database reset successfully!"
 
-migrate: ## Roda as migrations
-	@echo "🔄 Rodando migrations..."
+migrate: ## Runs the migrations
+	@echo "Running migrations..."
 	sqlx migrate run
-	@echo "✅ Migrations aplicadas!"
+	@echo "Migrations applied!"
 
-migrate-revert: ## Reverte a última migration
-	@echo "↩️  Revertendo última migration..."
+migrate-revert: ## Reverts the last migration
+	@echo "Reverting last migration..."
 	sqlx migrate revert
 
 ## Build & Run
-build: ## Compila o projeto
-	@echo "🔨 Compilando..."
+build: ## Compiles the project
+	@echo "Compiling..."
 	cargo build
 
-build-release: ## Compila em modo release
-	@echo "🔨 Compilando release..."
+build-release: ## Compiles in release mode
+	@echo "Compiling release..."
 	cargo build --release
 
-run: ## Roda o servidor
-	@echo "🚀 Iniciando servidor..."
+run: ## Runs the server
+	@echo "Starting server..."
 	cargo run
 
-run-release: ## Roda o servidor em modo release
-	@echo "🚀 Iniciando servidor (release)..."
+run-release: ## Runs the server in release mode
+	@echo "Starting server (release)..."
 	cargo run --release
 
-dev: ## Roda o servidor com auto-reload (requer cargo-watch)
-	@echo "🔥 Modo desenvolvimento com hot-reload..."
+dev: ## Runs the server with auto-reload (requires cargo-watch)
+	@echo "Development mode with hot-reload..."
 	cargo watch -x run
 
 ## CLI
-cli-superadmin: ## Cria o primeiro superadmin
-	@echo "👤 Criando superadmin..."
+cli-superadmin: ## Creates the first superadmin
+	@echo "Creating superadmin..."
 	cargo run --bin cli -- create-superadmin \
 		--email $(ADMIN_EMAIL) \
 		--username $(ADMIN_USERNAME) \
 		--password $(ADMIN_PASSWORD)
-	@echo "✅ Superadmin criado!"
+	@echo "Superadmin created!"
 
-cli-list-groups: ## Lista todos os grupos
-	@echo "📋 Listando grupos..."
+cli-list-groups: ## Lists all groups
+	@echo "Listing groups..."
 	cargo run --bin cli -- list-groups
 
-cli-create-group: ## Cria um grupo (uso: make cli-create-group NAME=developers DESC="Dev team")
-	@echo "➕ Criando grupo $(NAME)..."
+cli-create-group: ## Creates a group (usage: make cli-create-group NAME=developers DESC="Dev team")
+	@echo "Creating group $(NAME)..."
 	cargo run --bin cli -- create-group --name $(NAME) --description "$(DESC)"
 
 ## Tests
-test: ## Roda todos os testes Rust
-	@echo "🧪 Rodando testes Rust..."
+test: ## Runs all Rust tests
+	@echo "Running Rust tests..."
 	cargo test
 
-test-unit: ## Roda apenas testes unitários
-	@echo "🧪 Rodando testes unitários..."
+test-unit: ## Runs only unit tests
+	@echo "Running unit tests..."
 	cargo test --lib
 
-test-integration: ## Roda apenas testes de integração
-	@echo "🧪 Rodando testes de integração..."
+test-integration: ## Runs only integration tests
+	@echo "Running integration tests..."
 	cargo test --test '*'
 
-test-hurl: ## Roda testes Hurl (requer servidor rodando)
-	@echo "🧪 Rodando testes Hurl..."
+test-hurl: ## Runs Hurl tests (requires server running)
+	@echo "Running Hurl tests..."
 	@if ! curl -s http://localhost:3000/api/health > /dev/null 2>&1; then \
-		echo "❌ Servidor não está rodando! Execute 'make run' primeiro."; \
+		echo "Server is not running! Run 'make run' first."; \
 		exit 1; \
 	fi
-	./run_hurl_tests.sh
+	./hurl/run_hurl_tests.sh
 
-test-hurl-verbose: ## Roda testes Hurl em modo verbose
-	@echo "🧪 Rodando testes Hurl (verbose)..."
-	./run_hurl_tests.sh --verbose
+test-hurl-quick: ## Runs Hurl tests without cleanup (direct)
+	@echo "Running Hurl tests (direct, without cleanup)..."
+	@if ! curl -s http://localhost:3000/api/health > /dev/null 2>&1; then \
+		echo "Server is not running! Run 'make run' first."; \
+		exit 1; \
+	fi
+	@export TEST_TIMESTAMP=$$(date +%s) && \
+	hurl --variable BASE_URL=http://localhost:3000 --variable TEST_TIMESTAMP=$$TEST_TIMESTAMP --test hurl/*.hurl
 
-test-all: test test-hurl ## Roda todos os testes (Rust + Hurl)
+test-hurl-verbose: ## Runs Hurl tests in verbose mode
+	@echo "Running Hurl tests (verbose)..."
+	./hurl/run_hurl_tests.sh --verbose
+
+test-all: test test-hurl ## Runs all tests (Rust + Hurl)
 
 ## SQLx
-sqlx-prepare: ## Prepara SQLx metadata offline
-	@echo "📝 Preparando SQLx metadata..."
+sqlx-prepare: ## Prepares SQLx metadata offline
+	@echo "Preparing SQLx metadata..."
 	cargo sqlx prepare
 
-sqlx-check: ## Verifica se as queries SQLx estão corretas
-	@echo "🔍 Verificando queries SQLx..."
+sqlx-check: ## Verifies if SQLx queries are correct
+	@echo "Verifying SQLx queries..."
 	cargo sqlx prepare --check
 
-## Setup completo
-setup: db-create migrate cli-superadmin ## Setup completo (cria DB, migrations, superadmin)
+## Complete Setup
+setup: db-create migrate cli-superadmin ## Complete setup (creates DB, migrations, superadmin)
 	@echo ""
-	@echo "✨ Setup completo!"
+	@echo "Setup complete!"
 	@echo ""
-	@echo "Próximos passos:"
-	@echo "  1. Inicie o servidor: make run"
-	@echo "  2. Acesse: http://127.0.0.1:3000/login"
+	@echo "Next steps:"
+	@echo "  1. Start the server: make run"
+	@echo "  2. Access: http://127.0.0.1:3000/login"
 	@echo "  3. Login: $(ADMIN_USERNAME) / $(ADMIN_PASSWORD)"
 	@echo "  4. Admin: http://127.0.0.1:3000/admin"
 	@echo ""
 
 ## Development
-check: ## Verifica o código sem compilar
-	@echo "🔍 Verificando código..."
+check: ## Checks the code without compiling
+	@echo "Checking code..."
 	cargo check --all-targets
 
-lint: ## Roda clippy (linter)
-	@echo "🧹 Rodando linter..."
+lint: ## Runs clippy (linter)
+	@echo "Running linter..."
 	cargo clippy -- -D warnings
 
-fmt: ## Formata o código
-	@echo "✨ Formatando código..."
+fmt: ## Formats the code
+	@echo "Formatting code..."
 	cargo fmt
 
-fmt-check: ## Verifica formatação sem alterar
-	@echo "🔍 Verificando formatação..."
+fmt-check: ## Verifies formatting without changing
+	@echo "Verifying formatting..."
 	cargo fmt -- --check
 
-clean: ## Limpa arquivos de build
-	@echo "🧹 Limpando..."
+clean: ## Cleans build files
+	@echo "Cleaning..."
 	cargo clean
 
 ## Docker
-docker-up: ## Sobe o Postgres via docker-compose
-	@echo "🐳 Subindo Docker..."
+docker-up: ## Starts Postgres via docker-compose
+	@echo "Starting Docker..."
 	docker-compose up -d
-	@echo "⏳ Aguardando Postgres iniciar..."
+	@echo "Waiting for Postgres to start..."
 	@sleep 3
-	@echo "✅ Postgres rodando!"
+	@echo "Postgres is running!"
 
-docker-down: ## Para o Postgres
-	@echo "🛑 Parando Docker..."
+docker-down: ## Stops Postgres
+	@echo "Stopping Docker..."
 	docker-compose down
 
-docker-reset: docker-down docker-up ## Reseta containers Docker
-	@echo "✅ Docker resetado!"
+docker-reset: docker-down docker-up ## Resets Docker containers
+	@echo "Docker reset successfully!"
 
-docker-logs: ## Mostra logs do Postgres
+docker-logs: ## Shows Postgres logs
 	docker-compose logs -f postgres
 
 ## Quick commands
-fresh-start: docker-reset db-reset setup ## Começa do zero (Docker + DB + Setup)
+fresh-start: docker-reset db-reset setup ## Starts from scratch (Docker + DB + Setup)
 	@echo ""
-	@echo "🎉 Ambiente pronto para desenvolvimento!"
-	@echo "Execute: make run"
+	@echo "Environment ready for development!"
+	@echo "Run: make run"
 
-restart: docker-down docker-up migrate ## Reinicia ambiente de desenvolvimento
-	@echo "✅ Ambiente reiniciado!"
+restart: docker-down docker-up migrate ## Restarts development environment
+	@echo "Environment restarted!"
 
 ## Info
-env: ## Mostra variáveis de ambiente
+env: ## Shows environment variables
 	@echo "DATABASE_URL: $(DATABASE_URL)"
 	@echo "ADMIN_EMAIL: $(ADMIN_EMAIL)"
 	@echo "ADMIN_USERNAME: $(ADMIN_USERNAME)"
 	@echo "ADMIN_PASSWORD: $(ADMIN_PASSWORD)"
 
-status: ## Mostra status do ambiente
-	@echo "📊 Status do Ambiente"
+status: ## Shows environment status
+	@echo "Environment Status"
 	@echo ""
 	@echo "Docker:"
-	@docker-compose ps 2>/dev/null || echo "  ⚠️  Docker não está rodando"
+	@docker-compose ps 2>/dev/null || echo "  Docker is not running"
 	@echo ""
-	@echo "Servidor:"
+	@echo "Server:"
 	@if curl -s http://localhost:3000/api/health > /dev/null 2>&1; then \
-		echo "  ✅ Servidor rodando (http://localhost:3000)"; \
+		echo "  Server running (http://localhost:3000)"; \
 	else \
-		echo "  ⚠️  Servidor não está rodando"; \
+		echo "  Server is not running"; \
 	fi
 	@echo ""
 	@echo "Database:"
 	@if psql $(DATABASE_URL) -c "SELECT 1" > /dev/null 2>&1; then \
-		echo "  ✅ Conectado"; \
+		echo "  Connected"; \
 	else \
-		echo "  ⚠️  Não conectado"; \
+		echo "  Not connected"; \
 	fi

@@ -30,7 +30,12 @@ pub async fn check_permission(
     let policy_repo = Arc::new(PgPolicyRepository::new(pool.clone()));
     let policy_service = PolicyService::new(policy_repo);
 
-    let user = match user_repo.find_by_id(payload.user_id).await {
+    let namespace = match &auth_context {
+        ApiAuthContext::Organization(org) => org.namespace.clone(),
+        ApiAuthContext::Superadmin(user) => user.namespace.clone(),
+    };
+
+    let user = match user_repo.find_by_id(payload.user_id, &namespace).await {
         Ok(Some(user)) => user,
         Ok(None) => return (StatusCode::NOT_FOUND, "User not found").into_response(),
         Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
@@ -49,7 +54,10 @@ pub async fn check_permission(
         ApiAuthContext::Superadmin(_) => {}
     }
 
-    let user_policies = match user_repo.get_user_all_policies(payload.user_id).await {
+    let user_policies = match user_repo
+        .get_user_all_policies(payload.user_id, &namespace)
+        .await
+    {
         Ok(policies) => policies,
         Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     };

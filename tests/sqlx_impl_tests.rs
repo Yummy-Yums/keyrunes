@@ -1,3 +1,4 @@
+use keyrunes::constants::DEFAULT_NAMESPACE;
 use keyrunes::repository::sqlx_impl::PgUserRepository;
 use keyrunes::repository::{NewUser, UserRepository};
 use serial_test::serial;
@@ -17,13 +18,13 @@ async fn setup_test_db() -> PgPool {
         url
     } else if let Ok(url_str) = env::var("DATABASE_URL") {
         if let Ok(mut url) = Url::parse(&url_str) {
-            url.set_path("keyrunes_test");
+            url.set_path("keyrunes");
             url.to_string()
         } else {
-            "postgres://postgres_user:pass123@localhost:5432/keyrunes_test".to_string()
+            "postgres://postgres_user:pass123@localhost:5432/keyrunes".to_string()
         }
     } else {
-        "postgres://postgres_user:pass123@localhost:5432/keyrunes_test".to_string()
+        "postgres://postgres_user:pass123@localhost:5432/keyrunes".to_string()
     };
 
     let pool = PgPoolOptions::new()
@@ -59,7 +60,10 @@ async fn test_insert_and_find_user() {
     };
 
     // Act
-    let user = repo.insert_user(new_user.clone()).await.unwrap();
+    let user = repo
+        .insert_user(new_user.clone(), DEFAULT_NAMESPACE)
+        .await
+        .unwrap();
 
     // Assert
     assert_eq!(user.email, new_user.email);
@@ -67,21 +71,33 @@ async fn test_insert_and_find_user() {
     assert_eq!(user.first_login, new_user.first_login);
 
     // Act
-    let found_by_email = repo.find_by_email("john@test.com").await.unwrap().unwrap();
+    let found_by_email = repo
+        .find_by_email("john@test.com", DEFAULT_NAMESPACE)
+        .await
+        .unwrap()
+        .unwrap();
 
     // Assert
     assert_eq!(found_by_email.email, new_user.email);
     assert_eq!(found_by_email.username, new_user.username);
 
     // Act
-    let found_by_username = repo.find_by_username("johndoe").await.unwrap().unwrap();
+    let found_by_username = repo
+        .find_by_username("johndoe", DEFAULT_NAMESPACE)
+        .await
+        .unwrap()
+        .unwrap();
 
     // Assert
     assert_eq!(found_by_username.email, new_user.email);
     assert_eq!(found_by_username.username, new_user.username);
 
     // Act
-    let found_by_id = repo.find_by_id(user.user_id).await.unwrap().unwrap();
+    let found_by_id = repo
+        .find_by_id(user.user_id, DEFAULT_NAMESPACE)
+        .await
+        .unwrap()
+        .unwrap();
 
     // Assert
     assert_eq!(found_by_id.email, new_user.email);
@@ -104,15 +120,19 @@ async fn test_update_user_password() {
         organization_id: 1,
     };
 
-    let user = repo.insert_user(new_user).await.unwrap();
+    let user = repo.insert_user(new_user, DEFAULT_NAMESPACE).await.unwrap();
 
     // Act
-    repo.update_user_password(user.user_id, "new_hash")
+    repo.update_user_password(user.user_id, "new_hash", DEFAULT_NAMESPACE)
         .await
         .unwrap();
 
     // Assert
-    let updated_user = repo.find_by_id(user.user_id).await.unwrap().unwrap();
+    let updated_user = repo
+        .find_by_id(user.user_id, DEFAULT_NAMESPACE)
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(updated_user.password_hash, "new_hash");
 }
 
@@ -132,13 +152,19 @@ async fn test_set_first_login() {
         organization_id: 1,
     };
 
-    let user = repo.insert_user(new_user).await.unwrap();
+    let user = repo.insert_user(new_user, DEFAULT_NAMESPACE).await.unwrap();
 
     // Act
-    repo.set_first_login(user.user_id, false).await.unwrap();
+    repo.set_first_login(user.user_id, false, DEFAULT_NAMESPACE)
+        .await
+        .unwrap();
 
     // Assert
-    let updated_user = repo.find_by_id(user.user_id).await.unwrap().unwrap();
+    let updated_user = repo
+        .find_by_id(user.user_id, DEFAULT_NAMESPACE)
+        .await
+        .unwrap()
+        .unwrap();
     assert!(!updated_user.first_login);
 }
 
@@ -157,7 +183,9 @@ async fn test_duplicate_email() {
         organization_id: 1,
     };
 
-    repo.insert_user(new_user.clone()).await.unwrap();
+    repo.insert_user(new_user.clone(), DEFAULT_NAMESPACE)
+        .await
+        .unwrap();
 
     let duplicate_user = NewUser {
         external_id: Uuid::new_v4(),
@@ -168,7 +196,7 @@ async fn test_duplicate_email() {
         organization_id: 1,
     };
 
-    let result = repo.insert_user(duplicate_user).await;
+    let result = repo.insert_user(duplicate_user, DEFAULT_NAMESPACE).await;
     assert!(result.is_err());
 }
 
@@ -187,7 +215,9 @@ async fn test_duplicate_username() {
         organization_id: 1,
     };
 
-    repo.insert_user(new_user.clone()).await.unwrap();
+    repo.insert_user(new_user.clone(), DEFAULT_NAMESPACE)
+        .await
+        .unwrap();
 
     let duplicate_user = NewUser {
         external_id: Uuid::new_v4(),
@@ -198,7 +228,7 @@ async fn test_duplicate_username() {
         organization_id: 1,
     };
 
-    let result = repo.insert_user(duplicate_user).await;
+    let result = repo.insert_user(duplicate_user, DEFAULT_NAMESPACE).await;
     assert!(result.is_err());
 }
 
@@ -218,10 +248,15 @@ async fn test_case_insensitive_email() {
         organization_id: 1,
     };
 
-    repo.insert_user(new_user.clone()).await.unwrap();
+    repo.insert_user(new_user.clone(), DEFAULT_NAMESPACE)
+        .await
+        .unwrap();
 
     // Act
-    let found = repo.find_by_email("casetest@test.com").await.unwrap();
+    let found = repo
+        .find_by_email("casetest@test.com", DEFAULT_NAMESPACE)
+        .await
+        .unwrap();
 
     // Assert
     assert!(found.is_some());

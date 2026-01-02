@@ -24,6 +24,14 @@ pub struct RegisterApi {
     pub username: String,
     #[schema(example = "password123")]
     pub password: String,
+    #[schema(example = "1")]
+    #[serde(
+        default,
+        deserialize_with = "crate::api::deserializers::deserialize_option_string_or_number"
+    )]
+    pub organization_id: Option<i64>,
+    #[schema(example = "tenant_namespace")]
+    pub namespace: String,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -32,6 +40,8 @@ pub struct LoginApi {
     pub identity: String,
     #[schema(example = "password123")]
     pub password: String,
+    #[schema(example = "tenant_namespace")]
+    pub namespace: String,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -47,7 +57,10 @@ pub struct RefreshTokenResponse {
 #[derive(Deserialize, ToSchema)]
 pub struct ForgotPasswordApi {
     #[schema(example = "user@example.com")]
+    #[schema(example = "user@example.com")]
     pub email: String,
+    #[schema(example = "tenant_namespace")]
+    pub namespace: String,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -65,6 +78,7 @@ pub struct ResetPasswordQuery {
 pub struct ResetPasswordApi {
     pub token: String,
     pub new_password: String,
+    pub namespace: String,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -95,16 +109,19 @@ pub async fn register_api(
     Json(payload): Json<RegisterApi>,
 ) -> impl IntoResponse {
     let req = RegisterRequest {
-        organization_id: None,
+        organization_id: payload.organization_id,
         email: payload.email,
         username: payload.username,
         password: payload.password,
         first_login: Some(true),
     };
 
-    match service.register(req).await {
+    match service.register(req, &payload.namespace).await {
         Ok(auth_response) => (StatusCode::CREATED, Json(auth_response)).into_response(),
-        Err(e) => ErrorResponse::bad_request(e.to_string()).into_response(),
+        Err(e) => {
+            tracing::error!("Registration failed: {:?}", e);
+            ErrorResponse::bad_request(e.to_string()).into_response()
+        }
     }
 }
 
@@ -123,7 +140,10 @@ pub async fn login_api(
     Extension(service): Extension<Arc<UserServiceType>>,
     Json(payload): Json<LoginApi>,
 ) -> impl IntoResponse {
-    match service.login(payload.identity, payload.password).await {
+    match service
+        .login(payload.identity, payload.password, &payload.namespace)
+        .await
+    {
         Ok(auth_response) => (StatusCode::OK, Json(auth_response)).into_response(),
         Err(e) => ErrorResponse::unauthorized(e.to_string()).into_response(),
     }
@@ -198,12 +218,23 @@ pub async fn change_password_api(
         }
     };
 
-    let user_id = match service.jwt_service.extract_user_id(&token) {
-        Ok(id) => id,
+    let claims = match service.jwt_service.verify_token(&token) {
+        Ok(claims) => claims,
         Err(e) => return ErrorResponse::unauthorized(e.to_string()).into_response(),
     };
 
-    match service.change_password(user_id, payload).await {
+    let user_id = match claims.sub.parse::<i64>() {
+        Ok(id) => id,
+        Err(_) => {
+            return ErrorResponse::unauthorized("Invalid user ID in token".to_string())
+                .into_response();
+        }
+    };
+
+    match service
+        .change_password(user_id, payload, &claims.namespace)
+        .await
+    {
         Ok(_) => (
             StatusCode::OK,
             Json(MessageResponse {
@@ -234,7 +265,7 @@ pub async fn forgot_password_api(
         email: payload.email,
     };
 
-    match service.forgot_password(req).await {
+    match service.forgot_password(req, &payload.namespace).await {
         Ok(token) => {
             let reset_url = format!("?forgot_password={}", token);
 
@@ -290,7 +321,7 @@ pub async fn reset_password_api(
         new_password: payload.new_password,
     };
 
-    match service.reset_password(req).await {
+    match service.reset_password(req, &payload.namespace).await {
         Ok(_) => (
             StatusCode::OK,
             Json(MessageResponse {
@@ -375,6 +406,8 @@ mod tests {
             email: "test@example.com".to_string(),
             username: "testuser".to_string(),
             password: "password123".to_string(),
+            organization_id: None,
+            namespace: "public".to_string(),
         };
 
         assert_eq!(payload.email, "test@example.com");

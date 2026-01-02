@@ -1,3 +1,4 @@
+use keyrunes::constants::DEFAULT_NAMESPACE;
 use keyrunes::repository::sqlx_impl::PgSettingsRepository;
 use keyrunes::repository::{CreateSettings, SettingsRepository};
 use serial_test::serial;
@@ -14,13 +15,13 @@ async fn setup_test_db() -> PgSettingsRepository {
         url
     } else if let Ok(url_str) = std::env::var("DATABASE_URL") {
         if let Ok(mut url) = Url::parse(&url_str) {
-            url.set_path("keyrunes_test");
+            url.set_path("keyrunes");
             url.to_string()
         } else {
-            "postgres://postgres_user:pass123@localhost:5432/keyrunes_test".to_string()
+            "postgres://postgres_user:pass123@localhost:5432/keyrunes".to_string()
         }
     } else {
-        "postgres://postgres_user:pass123@localhost:5432/keyrunes_test".to_string()
+        "postgres://postgres_user:pass123@localhost:5432/keyrunes".to_string()
     };
 
     let pool = PgPoolOptions::new()
@@ -52,7 +53,10 @@ async fn test_create_and_get_settings() {
     };
 
     // Act
-    let created = repo.create_settings(new_settings.clone()).await.unwrap();
+    let created = repo
+        .create_settings(new_settings.clone(), DEFAULT_NAMESPACE)
+        .await
+        .unwrap();
 
     // Assert
     assert!(created.is_some());
@@ -61,7 +65,10 @@ async fn test_create_and_get_settings() {
     assert_eq!(created.value, "test_value");
 
     // Act
-    let found = repo.get_settings_by_key("test_key").await.unwrap();
+    let found = repo
+        .get_settings_by_key("test_key", DEFAULT_NAMESPACE)
+        .await
+        .unwrap();
 
     // Assert
     assert!(found.is_some());
@@ -82,14 +89,16 @@ async fn test_update_settings() {
         value: "initial_value".to_string(),
         description: None,
     };
-    repo.create_settings(new_settings).await.unwrap();
+    repo.create_settings(new_settings, DEFAULT_NAMESPACE)
+        .await
+        .unwrap();
 
-    repo.update_settings_by_key("update_key", "updated_value")
+    repo.update_settings_by_key("update_key", "updated_value", DEFAULT_NAMESPACE)
         .await
         .unwrap();
 
     let found = repo
-        .get_settings_by_key("update_key")
+        .get_settings_by_key("update_key", DEFAULT_NAMESPACE)
         .await
         .unwrap()
         .unwrap();
@@ -107,11 +116,18 @@ async fn test_delete_settings() {
         value: "value".to_string(),
         description: None,
     };
-    repo.create_settings(new_settings).await.unwrap();
+    repo.create_settings(new_settings, DEFAULT_NAMESPACE)
+        .await
+        .unwrap();
 
-    repo.delete_settings_by_key("delete_key").await.unwrap();
+    repo.delete_settings_by_key("delete_key", DEFAULT_NAMESPACE)
+        .await
+        .unwrap();
 
-    let found = repo.get_settings_by_key("delete_key").await.unwrap();
+    let found = repo
+        .get_settings_by_key("delete_key", DEFAULT_NAMESPACE)
+        .await
+        .unwrap();
     assert!(found.is_none());
 }
 
@@ -134,11 +150,11 @@ async fn test_get_all_settings() {
         description: None,
     };
 
-    repo.create_settings(s1).await.unwrap();
-    repo.create_settings(s2).await.unwrap();
+    repo.create_settings(s1, DEFAULT_NAMESPACE).await.unwrap();
+    repo.create_settings(s2, DEFAULT_NAMESPACE).await.unwrap();
 
     // Act
-    let all = repo.get_all_settings().await.unwrap();
+    let all = repo.get_all_settings(DEFAULT_NAMESPACE).await.unwrap();
 
     // Assert
     assert_eq!(all.len(), 2);

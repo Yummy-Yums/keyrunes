@@ -53,14 +53,16 @@ pub struct PolicyService<P: PolicyRepository> {
 
 #[allow(dead_code)]
 impl<P: PolicyRepository> PolicyService<P> {
+    /// Creates a new `PolicyService` instance.
     pub fn new(repo: Arc<P>) -> Self {
         Self { repo }
     }
 
-    pub async fn create_policy(&self, req: CreatePolicyRequest) -> Result<Policy> {
+    /// Creates a new policy.
+    pub async fn create_policy(&self, req: CreatePolicyRequest, namespace: &str) -> Result<Policy> {
         if self
             .repo
-            .find_by_name(&req.name, req.organization_id)
+            .find_by_name(&req.name, req.organization_id, namespace)
             .await?
             .is_some()
         {
@@ -85,62 +87,94 @@ impl<P: PolicyRepository> PolicyService<P> {
             conditions: req.conditions,
         };
 
-        self.repo.insert_policy(new_policy).await
+        self.repo.insert_policy(new_policy, namespace).await
     }
 
+    /// Finds a policy by its name within an organization.
     pub async fn get_policy_by_name(
         &self,
         name: &str,
         organization_id: i64,
+        namespace: &str,
     ) -> Result<Option<Policy>> {
-        self.repo.find_by_name(name, organization_id).await
+        self.repo
+            .find_by_name(name, organization_id, namespace)
+            .await
     }
 
-    pub async fn get_policy_by_id(&self, policy_id: i64) -> Result<Option<Policy>> {
-        self.repo.find_by_id(policy_id).await
+    /// Finds a policy by its ID.
+    pub async fn get_policy_by_id(
+        &self,
+        policy_id: i64,
+        namespace: &str,
+    ) -> Result<Option<Policy>> {
+        self.repo.find_by_id(policy_id, namespace).await
     }
 
-    pub async fn list_policies(&self, organization_id: i64) -> Result<Vec<Policy>> {
-        self.repo.list_policies(organization_id).await
+    /// Lists all policies in an organization.
+    pub async fn list_policies(
+        &self,
+        organization_id: i64,
+        namespace: &str,
+    ) -> Result<Vec<Policy>> {
+        self.repo.list_policies(organization_id, namespace).await
     }
 
+    /// Assigns a policy to a user.
     pub async fn assign_policy_to_user(
         &self,
         user_id: i64,
         policy_id: i64,
         assigned_by: Option<i64>,
+        namespace: &str,
     ) -> Result<()> {
-        if self.repo.find_by_id(policy_id).await?.is_none() {
+        if self.repo.find_by_id(policy_id, namespace).await?.is_none() {
             return Err(anyhow!("policy not found"));
         }
 
         self.repo
-            .assign_policy_to_user(user_id, policy_id, assigned_by)
+            .assign_policy_to_user(user_id, policy_id, assigned_by, namespace)
             .await
     }
 
+    /// Assigns a policy to a group.
     pub async fn assign_policy_to_group(
         &self,
         group_id: i64,
         policy_id: i64,
         assigned_by: Option<i64>,
+        namespace: &str,
     ) -> Result<()> {
-        if self.repo.find_by_id(policy_id).await?.is_none() {
+        if self.repo.find_by_id(policy_id, namespace).await?.is_none() {
             return Err(anyhow!("policy not found"));
         }
 
         self.repo
-            .assign_policy_to_group(group_id, policy_id, assigned_by)
+            .assign_policy_to_group(group_id, policy_id, assigned_by, namespace)
             .await
     }
 
-    pub async fn remove_policy_from_user(&self, user_id: i64, policy_id: i64) -> Result<()> {
-        self.repo.remove_policy_from_user(user_id, policy_id).await
+    /// Removes a policy from a user.
+    pub async fn remove_policy_from_user(
+        &self,
+        user_id: i64,
+        policy_id: i64,
+        namespace: &str,
+    ) -> Result<()> {
+        self.repo
+            .remove_policy_from_user(user_id, policy_id, namespace)
+            .await
     }
 
-    pub async fn remove_policy_from_group(&self, group_id: i64, policy_id: i64) -> Result<()> {
+    /// Removes a policy from a group.
+    pub async fn remove_policy_from_group(
+        &self,
+        group_id: i64,
+        policy_id: i64,
+        namespace: &str,
+    ) -> Result<()> {
         self.repo
-            .remove_policy_from_group(group_id, policy_id)
+            .remove_policy_from_group(group_id, policy_id, namespace)
             .await
     }
 
@@ -185,6 +219,7 @@ impl<P: PolicyRepository> PolicyService<P> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::constants::DEFAULT_NAMESPACE;
     use crate::repository::{Policy, PolicyEffect};
     use anyhow::Result;
     use async_trait::async_trait;
@@ -210,17 +245,22 @@ mod tests {
 
     #[async_trait]
     impl PolicyRepository for MockPolicyRepository {
-        async fn find_by_name(&self, name: &str, _organization_id: i64) -> Result<Option<Policy>> {
+        async fn find_by_name(
+            &self,
+            name: &str,
+            _organization_id: i64,
+            _namespace: &str,
+        ) -> Result<Option<Policy>> {
             let policies = self.policies.lock().unwrap();
             Ok(policies.iter().find(|p| p.name == name).cloned())
         }
 
-        async fn find_by_id(&self, policy_id: i64) -> Result<Option<Policy>> {
+        async fn find_by_id(&self, policy_id: i64, _namespace: &str) -> Result<Option<Policy>> {
             let policies = self.policies.lock().unwrap();
             Ok(policies.iter().find(|p| p.policy_id == policy_id).cloned())
         }
 
-        async fn insert_policy(&self, new_policy: NewPolicy) -> Result<Policy> {
+        async fn insert_policy(&self, new_policy: NewPolicy, _namespace: &str) -> Result<Policy> {
             let mut policies = self.policies.lock().unwrap();
             let policy = Policy {
                 policy_id: (policies.len() + 1) as i64,
@@ -239,7 +279,11 @@ mod tests {
             Ok(policy)
         }
 
-        async fn list_policies(&self, _organization_id: i64) -> Result<Vec<Policy>> {
+        async fn list_policies(
+            &self,
+            _organization_id: i64,
+            _namespace: &str,
+        ) -> Result<Vec<Policy>> {
             let policies = self.policies.lock().unwrap();
             Ok(policies.clone())
         }
@@ -249,6 +293,7 @@ mod tests {
             user_id: i64,
             policy_id: i64,
             _assigned_by: Option<i64>,
+            _namespace: &str,
         ) -> Result<()> {
             let mut user_policies = self.user_policies.lock().unwrap();
             user_policies.push((user_id, policy_id));
@@ -260,19 +305,30 @@ mod tests {
             group_id: i64,
             policy_id: i64,
             _assigned_by: Option<i64>,
+            _namespace: &str,
         ) -> Result<()> {
             let mut group_policies = self.group_policies.lock().unwrap();
             group_policies.push((group_id, policy_id));
             Ok(())
         }
 
-        async fn remove_policy_from_user(&self, user_id: i64, policy_id: i64) -> Result<()> {
+        async fn remove_policy_from_user(
+            &self,
+            user_id: i64,
+            policy_id: i64,
+            _namespace: &str,
+        ) -> Result<()> {
             let mut user_policies = self.user_policies.lock().unwrap();
             user_policies.retain(|(uid, pid)| !(*uid == user_id && *pid == policy_id));
             Ok(())
         }
 
-        async fn remove_policy_from_group(&self, group_id: i64, policy_id: i64) -> Result<()> {
+        async fn remove_policy_from_group(
+            &self,
+            group_id: i64,
+            policy_id: i64,
+            _namespace: &str,
+        ) -> Result<()> {
             let mut group_policies = self.group_policies.lock().unwrap();
             group_policies.retain(|(gid, pid)| !(*gid == group_id && *pid == policy_id));
             Ok(())
@@ -281,11 +337,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_policy() {
+        // Setup
         let repo = Arc::new(MockPolicyRepository::new());
         let service = PolicyService::new(repo);
 
         let req = CreatePolicyRequest {
-            organization_id: 1,
+            organization_id: crate::constants::DEFAULT_ORGANIZATION_ID,
             name: "test_policy".to_string(),
             description: Some("Test policy".to_string()),
             resource: "user:*".to_string(),
@@ -294,7 +351,10 @@ mod tests {
             conditions: None,
         };
 
-        let policy = service.create_policy(req).await.unwrap();
+        // Act
+        let policy = service.create_policy(req, DEFAULT_NAMESPACE).await.unwrap();
+
+        // Assert
         assert_eq!(policy.name, "test_policy");
         assert_eq!(policy.resource, "user:*");
         assert_eq!(policy.action, "read");
@@ -303,6 +363,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_evaluate_permission() {
+        // Setup
         let repo = Arc::new(MockPolicyRepository::new());
         let service = PolicyService::new(repo);
 
@@ -310,7 +371,7 @@ mod tests {
             Policy {
                 policy_id: 1,
                 external_id: Uuid::new_v4(),
-                organization_id: 1,
+                organization_id: crate::constants::DEFAULT_ORGANIZATION_ID,
                 name: "allow_read".to_string(),
                 description: None,
                 resource: "user:*".to_string(),
@@ -323,7 +384,7 @@ mod tests {
             Policy {
                 policy_id: 2,
                 external_id: Uuid::new_v4(),
-                organization_id: 1,
+                organization_id: crate::constants::DEFAULT_ORGANIZATION_ID,
                 name: "deny_delete".to_string(),
                 description: None,
                 resource: "*".to_string(),
@@ -335,6 +396,7 @@ mod tests {
             },
         ];
 
+        // Act & Assert
         assert!(
             service
                 .evaluate_permission(&policies, "user:123", "read")
@@ -362,7 +424,7 @@ mod tests {
         let policy = Policy {
             policy_id: 1,
             external_id: Uuid::new_v4(),
-            organization_id: 1,
+            organization_id: crate::constants::DEFAULT_ORGANIZATION_ID,
             name: "wildcard_policy".to_string(),
             description: None,
             resource: "api:*".to_string(),

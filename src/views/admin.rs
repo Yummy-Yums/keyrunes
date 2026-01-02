@@ -1,18 +1,21 @@
 use axum::{
     extract::Extension,
-    response::{Html, IntoResponse},
+    response::{Html, IntoResponse, Redirect},
 };
 use tera::Tera;
 
+use crate::constants::{ADMIN_GROUP, SUPERADMIN_GROUP};
 use crate::handler::auth::AuthenticatedUser;
 
 pub async fn admin_page(
     Extension(user): Extension<AuthenticatedUser>,
     Extension(tera): Extension<Tera>,
+    Extension(_pool): Extension<sqlx::PgPool>,
 ) -> impl IntoResponse {
-    if !user.groups.contains(&"superadmin".to_string()) {
-        return Html("<h1>403 Forbidden</h1><p>Superadmin access required</p>".to_string())
-            .into_response();
+    if !user.groups.contains(&SUPERADMIN_GROUP.to_string())
+        && !user.groups.contains(&ADMIN_GROUP.to_string())
+    {
+        return Redirect::to("/dashboard").into_response();
     }
 
     let mut context = tera::Context::new();
@@ -23,6 +26,8 @@ pub async fn admin_page(
             "username": user.username,
             "email": user.email,
             "groups": user.groups,
+            "namespace": user.namespace,
+            "organization_id": user.organization_id,
         }),
     );
 

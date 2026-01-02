@@ -69,7 +69,7 @@ Built for Rust. Inspired by RPG systems. Designed for security-critical platform
 
 ---
 
-## 🧪 Quickstart (WIP)
+## Quickstart (WIP)
 
 Follow these steps to quickly start KeyRunes locally:
 

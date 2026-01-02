@@ -7,7 +7,8 @@ use axum::{
 use keyrunes::api;
 use keyrunes::handler::errors::handler_404;
 use keyrunes::repository::sqlx_impl::{
-    PgGroupRepository, PgPasswordResetRepository, PgSettingsRepository, PgUserRepository,
+    PgGroupRepository, PgOrganizationRepository, PgPasswordResetRepository, PgSettingsRepository,
+    PgUserRepository,
 };
 use keyrunes::services::{
     jwt_service::JwtService,
@@ -26,13 +27,13 @@ async fn create_test_app() -> Router {
         url
     } else if let Ok(url_str) = std::env::var("DATABASE_URL") {
         if let Ok(mut url) = Url::parse(&url_str) {
-            url.set_path("keyrunes_test");
+            url.set_path("keyrunes");
             url.to_string()
         } else {
-            "postgres://postgres_user:pass123@localhost:5432/keyrunes_test".to_string()
+            "postgres://postgres_user:pass123@localhost:5432/keyrunes".to_string()
         }
     } else {
-        "postgres://postgres_user:pass123@localhost:5432/keyrunes_test".to_string()
+        "postgres://postgres_user:pass123@localhost:5432/keyrunes".to_string()
     };
 
     let pool = PgPoolOptions::new()
@@ -44,6 +45,7 @@ async fn create_test_app() -> Router {
     let user_repo = Arc::new(PgUserRepository::new(pool.clone()));
     let group_repo = Arc::new(PgGroupRepository::new(pool.clone()));
     let password_reset_repo = Arc::new(PgPasswordResetRepository::new(pool.clone()));
+    let org_repo = Arc::new(PgOrganizationRepository::new(pool.clone()));
     let jwt_service = Arc::new(JwtService::new("test_secret"));
     let settings_repo = Arc::new(PgSettingsRepository::new(pool.clone()));
     let settings_service = Arc::new(SettingsService::new(settings_repo));

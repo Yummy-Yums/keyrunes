@@ -1,4 +1,4 @@
-use keyrunes::repository::sqlx_impl::PgOrganizationRepository;
+use keyrunes::repository::sqlx_impl::{PgGroupRepository, PgOrganizationRepository};
 use keyrunes::services::organization_service::{CreateOrganizationRequest, OrganizationService};
 use serial_test::serial;
 use sqlx::PgPool;
@@ -7,6 +7,7 @@ use sqlx::postgres::PgPoolOptions;
 use std::env;
 use std::sync::Arc;
 use url::Url;
+use uuid::Uuid;
 
 static MIGRATOR: Migrator = sqlx::migrate!("./migrations");
 
@@ -16,13 +17,13 @@ async fn setup_db() -> PgPool {
         url
     } else if let Ok(url_str) = env::var("DATABASE_URL") {
         if let Ok(mut url) = Url::parse(&url_str) {
-            url.set_path("keyrunes_test");
+            url.set_path("keyrunes");
             url.to_string()
         } else {
-            "postgres://postgres_user:pass123@localhost:5432/keyrunes_test".to_string()
+            "postgres://postgres_user:pass123@localhost:5432/keyrunes".to_string()
         }
     } else {
-        "postgres://postgres_user:pass123@localhost:5432/keyrunes_test".to_string()
+        "postgres://postgres_user:pass123@localhost:5432/keyrunes".to_string()
     };
 
     let pool = PgPoolOptions::new()
@@ -33,7 +34,7 @@ async fn setup_db() -> PgPool {
 
     MIGRATOR.run(&pool).await.expect("Failed to run migrations");
 
-    sqlx::query!("TRUNCATE TABLE organizations CASCADE")
+    sqlx::query!("TRUNCATE TABLE organizations, groups, users CASCADE")
         .execute(&pool)
         .await
         .expect("Failed to clean up tables");
@@ -46,12 +47,16 @@ async fn setup_db() -> PgPool {
 async fn test_rotate_org_key() {
     // Setup
     let pool = setup_db().await;
-    let repo = Arc::new(PgOrganizationRepository::new(pool));
-    let service = OrganizationService::new(repo);
+    let repo = Arc::new(PgOrganizationRepository::new(pool.clone()));
+    let group_repo = Arc::new(PgGroupRepository::new(pool));
+    let service = OrganizationService::new(repo, group_repo);
 
+    let namespace = format!("test_org_{}", Uuid::new_v4().to_string().replace('-', ""));
     let req = CreateOrganizationRequest {
         name: "Test Org".to_string(),
         description: Some("Test Desc".to_string()),
+        namespace,
+        base_url: None,
     };
 
     let org = service.create_organization(req).await.unwrap();

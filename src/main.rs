@@ -1,13 +1,9 @@
 use std::sync::Arc;
 
 use axum::middleware::from_fn;
-use axum::{
-    Router,
-    extract::Extension,
-    response::Redirect,
-    routing::{get, post},
-};
-use sqlx::postgres::PgPoolOptions;
+use axum::routing::{delete, get, patch, post};
+use axum::{Router, extract::Extension, response::Redirect};
+use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use tera::Tera;
 use tokio::net::TcpListener;
 use tower_http::services::ServeDir;
@@ -25,8 +21,13 @@ use keyrunes::repository::sqlx_impl::PgOrganizationRepository;
 use keyrunes::repository::sqlx_impl::PgSettingsRepository;
 use keyrunes::services::organization_service::OrganizationService;
 use keyrunes::services::user_service::SettingsService;
-use repository::sqlx_impl::{PgGroupRepository, PgPasswordResetRepository, PgUserRepository};
-use services::{email_service::EmailService, jwt_service::JwtService, user_service::UserService};
+use repository::sqlx_impl::{
+    PgGroupRepository, PgPasswordResetRepository, PgPolicyRepository, PgUserRepository,
+};
+use services::{
+    email_service::EmailService, group_service::GroupService, jwt_service::JwtService,
+    policy_service::PolicyService, user_service::UserService,
+};
 
 use crate::api::openapi::ApiDoc;
 use utoipa::OpenApi;
@@ -54,9 +55,13 @@ async fn main() -> anyhow::Result<()> {
     let database_url = std::env::var("DATABASE_URL")
         .unwrap_or_else(|_| "postgres://postgres_user:pass123@localhost:5432/keyrunes".into());
 
+    let conn_options = database_url
+        .parse::<PgConnectOptions>()?
+        .statement_cache_capacity(0);
+
     let pool = PgPoolOptions::new()
         .max_connections(5)
-        .connect(&database_url)
+        .connect_with(conn_options)
         .await?;
     tracing::info!("✅ Database established!");
 
@@ -100,13 +105,20 @@ async fn main() -> anyhow::Result<()> {
 
     let user_service = Arc::new(UserService::new(
         user_repo,
-        group_repo,
+        group_repo.clone(),
         password_reset_repo,
         jwt_service.clone(),
         settings_service,
         email_service,
     ));
-    let organization_service = Arc::new(OrganizationService::new(organization_repo));
+    let organization_service = Arc::new(OrganizationService::new(
+        organization_repo,
+        group_repo.clone(),
+    ));
+
+    let policy_repo = Arc::new(PgPolicyRepository::new(pool.clone()));
+    let group_service = Arc::new(GroupService::new(group_repo));
+    let policy_service = Arc::new(PolicyService::new(policy_repo));
 
     let public_router = Router::new()
         .route("/", get(|| async { Redirect::temporary("/login") }))
@@ -141,8 +153,17 @@ async fn main() -> anyhow::Result<()> {
         );
 
     let protected_api_router = Router::new()
+        .route(
+            "/api/admin/organizations",
+            get(api::organization::list_organizations),
+        )
         .route("/api/refresh-token", post(api::auth::refresh_token_api))
         .route("/api/me", get(api::auth::me_api))
+        .route("/api/user/profile", patch(api::user::update_profile))
+        .route(
+            "/api/user/change-password",
+            post(api::user::change_password),
+        )
         .route("/api/org/secret", get(api::organization::get_org_key))
         .route(
             "/api/org/secret/rotate",
@@ -158,6 +179,18 @@ async fn main() -> anyhow::Result<()> {
     let admin_router = Router::new()
         .route("/api/admin/dashboard", get(api::admin::admin_dashboard))
         .route("/api/admin/users", get(api::admin::list_users))
+        .route(
+            "/api/admin/users/{user_id}",
+            delete(api::admin::delete_user).patch(api::admin::update_user),
+        )
+        .route(
+            "/api/admin/users/{user_id}/reset-password",
+            post(api::admin::admin_reset_user_password),
+        )
+        .route(
+            "/api/admin/users/{user_id}/send-reset",
+            post(api::admin::send_password_reset_email),
+        )
         .route("/api/admin/user", post(api::admin::create_user))
         .route(
             "/api/admin/groups",
@@ -177,7 +210,11 @@ async fn main() -> anyhow::Result<()> {
         )
         .route(
             "/api/admin/organizations",
-            get(api::organization::list_organizations).post(api::organization::create_organization),
+            post(api::organization::create_organization),
+        )
+        .route(
+            "/api/admin/organizations/{id}",
+            delete(api::organization::delete_organization),
         )
         .route(
             "/api/admin/organizations/{id}/rotate-key",
@@ -216,6 +253,8 @@ async fn main() -> anyhow::Result<()> {
         .fallback(handler_404)
         .layer(Extension(tera))
         .layer(Extension(user_service))
+        .layer(Extension(group_service))
+        .layer(Extension(policy_service))
         .layer(Extension(organization_service))
         .layer(Extension(jwt_service))
         .layer(Extension(pool))

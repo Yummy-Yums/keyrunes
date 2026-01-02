@@ -1,10 +1,13 @@
+mod common;
+
 use anyhow::Result;
 use async_trait::async_trait;
 use chrono::Utc;
+use common::factories::GroupFactory;
+use keyrunes::constants::DEFAULT_NAMESPACE;
 use keyrunes::group_service::{CreateGroupRequest, GroupService};
 use keyrunes::repository::{Group, GroupRepository, NewGroup, Policy};
 use std::sync::{Arc, Mutex};
-use uuid::Uuid;
 
 struct MockGroupRepository {
     groups: Mutex<Vec<Group>>,
@@ -14,24 +17,18 @@ struct MockGroupRepository {
 impl MockGroupRepository {
     fn new() -> Self {
         let groups = Mutex::new(vec![
-            Group {
-                group_id: 1,
-                external_id: Uuid::new_v4(),
-                organization_id: 1,
-                name: "superadmin".to_string(),
-                description: Some("Superadmin group".to_string()),
-                created_at: Utc::now(),
-                updated_at: Utc::now(),
-            },
-            Group {
-                group_id: 2,
-                external_id: Uuid::new_v4(),
-                organization_id: 1,
-                name: "users".to_string(),
-                description: Some("Regular users".to_string()),
-                created_at: Utc::now(),
-                updated_at: Utc::now(),
-            },
+            GroupFactory::create_group(
+                1,
+                "superadmin".to_string(),
+                Some("Superadmin group".to_string()),
+                1,
+            ),
+            GroupFactory::create_group(
+                2,
+                "users".to_string(),
+                Some("Regular users".to_string()),
+                1,
+            ),
         ]);
 
         Self {
@@ -43,7 +40,7 @@ impl MockGroupRepository {
 
 #[async_trait]
 impl GroupRepository for MockGroupRepository {
-    async fn insert_group(&self, new_group: NewGroup) -> Result<Group> {
+    async fn insert_group(&self, new_group: NewGroup, _namespace: &str) -> Result<Group> {
         let mut groups = self.groups.lock().unwrap();
         let group = Group {
             group_id: (groups.len() + 1) as i64,
@@ -58,17 +55,22 @@ impl GroupRepository for MockGroupRepository {
         Ok(group)
     }
 
-    async fn find_by_name(&self, name: &str, _organization_id: i64) -> Result<Option<Group>> {
+    async fn find_by_name(
+        &self,
+        name: &str,
+        _organization_id: i64,
+        _namespace: &str,
+    ) -> Result<Option<Group>> {
         let groups = self.groups.lock().unwrap();
         Ok(groups.iter().find(|g| g.name == name).cloned())
     }
 
-    async fn find_by_id(&self, group_id: i64) -> Result<Option<Group>> {
+    async fn find_by_id(&self, group_id: i64, _namespace: &str) -> Result<Option<Group>> {
         let groups = self.groups.lock().unwrap();
         Ok(groups.iter().find(|g| g.group_id == group_id).cloned())
     }
 
-    async fn list_groups(&self, _organization_id: i64) -> Result<Vec<Group>> {
+    async fn list_groups(&self, _organization_id: i64, _namespace: &str) -> Result<Vec<Group>> {
         Ok(self.groups.lock().unwrap().clone())
     }
 
@@ -77,6 +79,7 @@ impl GroupRepository for MockGroupRepository {
         user_id: i64,
         group_id: i64,
         assigned_by: Option<i64>,
+        _namespace: &str,
     ) -> Result<()> {
         let mut user_groups = self.user_groups.lock().unwrap();
 
@@ -91,13 +94,18 @@ impl GroupRepository for MockGroupRepository {
         Ok(())
     }
 
-    async fn remove_user_from_group(&self, user_id: i64, group_id: i64) -> Result<()> {
+    async fn remove_user_from_group(
+        &self,
+        user_id: i64,
+        group_id: i64,
+        _namespace: &str,
+    ) -> Result<()> {
         let mut user_groups = self.user_groups.lock().unwrap();
         user_groups.retain(|(uid, gid, _)| !(*uid == user_id && *gid == group_id));
         Ok(())
     }
 
-    async fn get_group_policies(&self, _group_id: i64) -> Result<Vec<Policy>> {
+    async fn get_group_policies(&self, _group_id: i64, _namespace: &str) -> Result<Vec<Policy>> {
         Ok(Vec::new())
     }
 }
@@ -115,7 +123,7 @@ async fn test_create_group_success() {
     };
 
     // Act
-    let result = service.create_group(req).await;
+    let result = service.create_group(req, DEFAULT_NAMESPACE).await;
 
     // Assert
     assert!(result.is_ok());
@@ -138,7 +146,7 @@ async fn test_create_group_duplicate_name() {
     };
 
     // Act
-    let result = service.create_group(req).await;
+    let result = service.create_group(req, DEFAULT_NAMESPACE).await;
 
     // Assert
     assert!(result.is_err());
@@ -152,7 +160,7 @@ async fn test_list_groups() {
     let service = GroupService::new(repo);
 
     // Act
-    let result = service.list_groups(1).await;
+    let result = service.list_groups(1, DEFAULT_NAMESPACE).await;
 
     // Assert
     assert!(result.is_ok());
@@ -170,7 +178,9 @@ async fn test_get_group_by_name() {
     let service = GroupService::new(repo);
 
     // Act
-    let result = service.get_group_by_name("superadmin", 1).await;
+    let result = service
+        .get_group_by_name("superadmin", 1, DEFAULT_NAMESPACE)
+        .await;
 
     // Assert
     assert!(result.is_ok());
@@ -187,7 +197,9 @@ async fn test_get_group_by_name_not_found() {
     let service = GroupService::new(repo);
 
     // Act
-    let result = service.get_group_by_name("nonexistent", 1).await;
+    let result = service
+        .get_group_by_name("nonexistent", 1, DEFAULT_NAMESPACE)
+        .await;
 
     // Assert
     assert!(result.is_ok());
@@ -201,7 +213,7 @@ async fn test_get_group_by_id() {
     let service = GroupService::new(repo);
 
     // Act
-    let result = service.get_group_by_id(1).await;
+    let result = service.get_group_by_id(1, DEFAULT_NAMESPACE).await;
 
     // Assert
     assert!(result.is_ok());
@@ -218,7 +230,9 @@ async fn test_assign_user_to_group_success() {
     let service = GroupService::new(repo.clone());
 
     // Act
-    let result = service.assign_user_to_group(100, 1, Some(1)).await;
+    let result = service
+        .assign_user_to_group(100, 1, Some(1), DEFAULT_NAMESPACE)
+        .await;
 
     // Assert
     assert!(result.is_ok());
@@ -238,7 +252,9 @@ async fn test_assign_user_to_group_nonexistent_group() {
     let service = GroupService::new(repo);
 
     // Act
-    let result = service.assign_user_to_group(100, 999, Some(1)).await;
+    let result = service
+        .assign_user_to_group(100, 999, Some(1), DEFAULT_NAMESPACE)
+        .await;
 
     // Assert
     assert!(result.is_err());
@@ -251,11 +267,15 @@ async fn test_assign_user_to_group_duplicate() {
     let repo = Arc::new(MockGroupRepository::new());
     let service = GroupService::new(repo);
 
-    let result1 = service.assign_user_to_group(100, 1, Some(1)).await;
+    let result1 = service
+        .assign_user_to_group(100, 1, Some(1), DEFAULT_NAMESPACE)
+        .await;
     assert!(result1.is_ok());
 
     // Act
-    let result2 = service.assign_user_to_group(100, 1, Some(1)).await;
+    let result2 = service
+        .assign_user_to_group(100, 1, Some(1), DEFAULT_NAMESPACE)
+        .await;
 
     // Assert
     assert!(result2.is_err());
@@ -271,10 +291,15 @@ async fn test_remove_user_from_group() {
     let repo = Arc::new(MockGroupRepository::new());
     let service = GroupService::new(repo.clone());
 
-    service.assign_user_to_group(100, 1, Some(1)).await.unwrap();
+    service
+        .assign_user_to_group(100, 1, Some(1), DEFAULT_NAMESPACE)
+        .await
+        .unwrap();
 
     // Act
-    let result = service.remove_user_from_group(100, 1).await;
+    let result = service
+        .remove_user_from_group(100, 1, DEFAULT_NAMESPACE)
+        .await;
 
     // Assert
     assert!(result.is_ok());
@@ -302,12 +327,12 @@ async fn test_create_multiple_groups() {
             name: name.to_string(),
             description: Some(desc.to_string()),
         };
-        let result = service.create_group(req).await;
+        let result = service.create_group(req, DEFAULT_NAMESPACE).await;
         assert!(result.is_ok(), "Failed to create group: {}", name);
     }
 
     // Assert
-    let all_groups = service.list_groups(1).await.unwrap();
+    let all_groups = service.list_groups(1, DEFAULT_NAMESPACE).await.unwrap();
     assert_eq!(all_groups.len(), 5);
 }
 
@@ -319,7 +344,9 @@ async fn test_assign_multiple_users_to_group() {
 
     // Act
     for user_id in 100..105 {
-        let result = service.assign_user_to_group(user_id, 1, Some(1)).await;
+        let result = service
+            .assign_user_to_group(user_id, 1, Some(1), DEFAULT_NAMESPACE)
+            .await;
         assert!(result.is_ok());
     }
 
@@ -335,8 +362,12 @@ async fn test_assign_user_to_multiple_groups() {
     let service = GroupService::new(repo.clone());
 
     // Act
-    let result1 = service.assign_user_to_group(100, 1, Some(1)).await;
-    let result2 = service.assign_user_to_group(100, 2, Some(1)).await;
+    let result1 = service
+        .assign_user_to_group(100, 1, Some(1), DEFAULT_NAMESPACE)
+        .await;
+    let result2 = service
+        .assign_user_to_group(100, 2, Some(1), DEFAULT_NAMESPACE)
+        .await;
 
     // Assert
     assert!(result1.is_ok());

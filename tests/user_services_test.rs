@@ -3,13 +3,18 @@ mod common;
 use anyhow::Result;
 use async_trait::async_trait;
 use chrono::Utc;
-use common::factories::UserFactory;
+use common::factories::{GroupFactory, OrganizationFactory, UserFactory};
+use keyrunes::UserGroup;
+use keyrunes::constants::DEFAULT_NAMESPACE;
 use keyrunes::domain::user::{Email, Password};
 use keyrunes::group_service::{CreateGroupRequest, GroupService};
-use keyrunes::repository::{Group, NewUser, Policy, User, UserRepository};
+use keyrunes::repository::{
+    CreateSettings, Group, NewGroup, NewOrganization, NewPasswordResetToken, NewUser, Organization,
+    OrganizationRepository, PasswordResetRepository, PasswordResetToken, Policy, Settings,
+    SettingsRepository, User, UserRepository,
+};
 use keyrunes::services::user_service::{RegisterRequest, UserService};
 use keyrunes::user_service::{CreateUserRequest, SettingsService};
-use keyrunes::{CreateSettings, Settings, UserGroup};
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
@@ -24,25 +29,33 @@ fn create_stores() -> (GroupStore, UserGroupStore) {
     let group_store = Arc::new(Mutex::new(Vec::new()));
     let user_group_store = Arc::new(Mutex::new(Vec::new()));
 
-    group_store.lock().unwrap().push(Group {
-        group_id: 0,
-        external_id: Uuid::new_v4(),
-        organization_id: 1,
-        name: "superadmin".to_string(),
-        description: Some("Admin group".to_string()),
-        created_at: Utc::now(),
-        updated_at: Utc::now(),
-    });
+    group_store.lock().unwrap().push(GroupFactory::create_group(
+        1,
+        keyrunes::constants::SUPERADMIN_GROUP.to_string(),
+        Some("Admin group".to_string()),
+        keyrunes::constants::DEFAULT_ORGANIZATION_ID,
+    ));
 
-    group_store.lock().unwrap().push(Group {
-        group_id: 1,
-        external_id: Uuid::new_v4(),
-        organization_id: 1,
-        name: "users".to_string(),
-        description: Some("User group".to_string()),
-        created_at: Utc::now(),
-        updated_at: Utc::now(),
-    });
+    group_store.lock().unwrap().push(GroupFactory::create_group(
+        2,
+        keyrunes::constants::USERS_GROUP.to_string(),
+        Some("User group".to_string()),
+        keyrunes::constants::DEFAULT_ORGANIZATION_ID,
+    ));
+
+    group_store.lock().unwrap().push(GroupFactory::create_group(
+        3,
+        keyrunes::constants::ADMIN_GROUP.to_string(),
+        Some("Admin group for Org 2".to_string()),
+        2,
+    ));
+
+    group_store.lock().unwrap().push(GroupFactory::create_group(
+        4,
+        keyrunes::constants::USERS_GROUP.to_string(),
+        Some("User group for Org 2".to_string()),
+        2,
+    ));
 
     (group_store, user_group_store)
 }
@@ -65,22 +78,22 @@ impl MockRepo {
 
 #[async_trait]
 impl UserRepository for MockRepo {
-    async fn find_by_email(&self, email: &str) -> Result<Option<User>> {
+    async fn find_by_email(&self, email: &str, _namespace: &str) -> Result<Option<User>> {
         let users = self.users.lock().unwrap();
         Ok(users.iter().cloned().find(|u| u.email == email))
     }
 
-    async fn find_by_username(&self, username: &str) -> Result<Option<User>> {
+    async fn find_by_username(&self, username: &str, _namespace: &str) -> Result<Option<User>> {
         let users = self.users.lock().unwrap();
         Ok(users.iter().cloned().find(|u| u.username == username))
     }
 
-    async fn find_by_id(&self, user_id: i64) -> Result<Option<User>> {
+    async fn find_by_id(&self, user_id: i64, _namespace: &str) -> Result<Option<User>> {
         let users = self.users.lock().unwrap();
         Ok(users.iter().cloned().find(|u| u.user_id == user_id))
     }
 
-    async fn insert_user(&self, new_user: NewUser) -> Result<User> {
+    async fn insert_user(&self, new_user: NewUser, _namespace: &str) -> Result<User> {
         let mut users = self.users.lock().unwrap();
         let user = User {
             user_id: (users.len() + 1) as i64,
@@ -97,7 +110,12 @@ impl UserRepository for MockRepo {
         Ok(user)
     }
 
-    async fn update_user_password(&self, user_id: i64, new_password_hash: &str) -> Result<()> {
+    async fn update_user_password(
+        &self,
+        user_id: i64,
+        new_password_hash: &str,
+        _namespace: &str,
+    ) -> Result<()> {
         let mut users = self.users.lock().unwrap();
         if let Some(user) = users.iter_mut().find(|u| u.user_id == user_id) {
             user.password_hash = new_password_hash.to_string();
@@ -106,7 +124,13 @@ impl UserRepository for MockRepo {
         Ok(())
     }
 
-    async fn update_user_profile(&self, user_id: i64, email: &str, username: &str) -> Result<()> {
+    async fn update_user_profile(
+        &self,
+        user_id: i64,
+        email: &str,
+        username: &str,
+        _namespace: &str,
+    ) -> Result<()> {
         let mut users = self.users.lock().unwrap();
         if let Some(user) = users.iter_mut().find(|u| u.user_id == user_id) {
             user.email = email.to_string();
@@ -116,7 +140,12 @@ impl UserRepository for MockRepo {
         Ok(())
     }
 
-    async fn set_first_login(&self, user_id: i64, first_login: bool) -> Result<()> {
+    async fn set_first_login(
+        &self,
+        user_id: i64,
+        first_login: bool,
+        _namespace: &str,
+    ) -> Result<()> {
         let mut users = self.users.lock().unwrap();
         if let Some(user) = users.iter_mut().find(|u| u.user_id == user_id) {
             user.first_login = first_login;
@@ -125,7 +154,7 @@ impl UserRepository for MockRepo {
         Ok(())
     }
 
-    async fn get_user_groups(&self, user_id: i64) -> Result<Vec<Group>> {
+    async fn get_user_groups(&self, user_id: i64, _namespace: &str) -> Result<Vec<Group>> {
         let groups = self.group_store.lock().unwrap();
         let user_groups = self.user_group_store.lock().unwrap();
         let user_groups: Vec<Group> = user_groups
@@ -142,13 +171,56 @@ impl UserRepository for MockRepo {
         Ok(user_groups)
     }
 
-    async fn get_user_policies(&self, _user_id: i64) -> Result<Vec<Policy>> {
+    async fn get_user_policies(&self, _user_id: i64, _namespace: &str) -> Result<Vec<Policy>> {
         Ok(Vec::new())
     }
 
-    async fn get_user_all_policies(&self, _user_id: i64) -> Result<Vec<Policy>> {
+    async fn get_user_all_policies(&self, _user_id: i64, _namespace: &str) -> Result<Vec<Policy>> {
         Ok(Vec::new())
     }
+
+    async fn count_users(&self, namespace: &str) -> Result<i64> {
+        let users = self.users.lock().unwrap();
+        let count = match namespace {
+            DEFAULT_NAMESPACE => users.iter().filter(|u| u.organization_id == 1).count(),
+            "org_2" => users.iter().filter(|u| u.organization_id == 2).count(),
+            _ => users.iter().count(), // Fallback
+        };
+        Ok(count as i64)
+    }
+
+    async fn delete_user(&self, user_id: i64, _namespace: &str) -> Result<()> {
+        let mut users = self.users.lock().unwrap();
+        users.retain(|u| u.user_id != user_id);
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn test_delete_user() {
+    // Setup
+    let service = helper_service();
+    let user_data = UserFactory::build();
+    let req = RegisterRequest {
+        email: user_data.email.clone(),
+        username: user_data.username.clone(),
+        password: "Password123".to_string(),
+        first_login: Some(false),
+        organization_id: None,
+    };
+    let auth_response = service.register(req, DEFAULT_NAMESPACE).await.unwrap();
+    let user_id = auth_response.user.user_id;
+
+    // Act
+    let delete_result = service.delete_user(user_id, DEFAULT_NAMESPACE).await;
+
+    // Assert
+    assert!(delete_result.is_ok());
+
+    let find_result = service
+        .find_user_by_email(&user_data.email, DEFAULT_NAMESPACE)
+        .await;
+    assert!(find_result.is_none());
 }
 
 struct MockGroupRepository {
@@ -167,22 +239,32 @@ impl MockGroupRepository {
 
 #[async_trait]
 impl keyrunes::repository::GroupRepository for MockGroupRepository {
-    async fn find_by_name(&self, name: &str, _organization_id: i64) -> Result<Option<Group>> {
+    async fn find_by_name(
+        &self,
+        name: &str,
+        _organization_id: i64,
+        _namespace: &str,
+    ) -> Result<Option<Group>> {
         let groups = self.group_store.lock().unwrap();
         let group = groups.iter().cloned().find(|g| g.name == name);
         Ok(group)
     }
 
-    async fn find_by_id(&self, group_id: i64) -> Result<Option<Group>> {
+    async fn find_by_id(&self, group_id: i64, _namespace: &str) -> Result<Option<Group>> {
         let groups = self.group_store.lock().unwrap();
         let group = groups.iter().cloned().find(|g| g.group_id == group_id);
         Ok(group)
     }
 
-    async fn insert_group(&self, new_group: keyrunes::repository::NewGroup) -> Result<Group> {
+    async fn insert_group(
+        &self,
+        new_group: keyrunes::repository::NewGroup,
+        _namespace: &str,
+    ) -> Result<Group> {
         let mut groups = self.group_store.lock().unwrap();
+        let group_id = groups.iter().map(|g| g.group_id).max().unwrap_or(0) + 1;
         let group = Group {
-            group_id: groups.len() as i64,
+            group_id,
             external_id: new_group.external_id,
             organization_id: new_group.organization_id,
             name: new_group.name,
@@ -194,7 +276,7 @@ impl keyrunes::repository::GroupRepository for MockGroupRepository {
         Ok(group)
     }
 
-    async fn list_groups(&self, _organization_id: i64) -> Result<Vec<Group>> {
+    async fn list_groups(&self, _organization_id: i64, _namespace: &str) -> Result<Vec<Group>> {
         Ok(self.group_store.lock().unwrap().clone())
     }
 
@@ -203,6 +285,7 @@ impl keyrunes::repository::GroupRepository for MockGroupRepository {
         user_id: i64,
         group_id: i64,
         assigned_by: Option<i64>,
+        _namespace: &str,
     ) -> Result<()> {
         let mut user_groups = self.user_group_store.lock().unwrap();
         user_groups.push(UserGroup {
@@ -214,13 +297,18 @@ impl keyrunes::repository::GroupRepository for MockGroupRepository {
         Ok(())
     }
 
-    async fn remove_user_from_group(&self, user_id: i64, group_id: i64) -> Result<()> {
+    async fn remove_user_from_group(
+        &self,
+        user_id: i64,
+        group_id: i64,
+        _namespace: &str,
+    ) -> Result<()> {
         let mut user_groups = self.user_group_store.lock().unwrap();
         user_groups.retain(|g| !(g.user_id == user_id && g.group_id == group_id));
         Ok(())
     }
 
-    async fn get_group_policies(&self, _group_id: i64) -> Result<Vec<Policy>> {
+    async fn get_group_policies(&self, _group_id: i64, _namespace: &str) -> Result<Vec<Policy>> {
         Ok(Vec::new())
     }
 }
@@ -265,7 +353,11 @@ impl MockSettingsRepository {
 
 #[async_trait]
 impl keyrunes::repository::SettingsRepository for MockSettingsRepository {
-    async fn create_settings(&self, settings: CreateSettings) -> Result<Option<CreateSettings>> {
+    async fn create_settings(
+        &self,
+        settings: CreateSettings,
+        _namespace: &str,
+    ) -> Result<Option<CreateSettings>> {
         let settings_record = Settings {
             settings_id: 22,
             organization_id: Some(1),
@@ -281,7 +373,7 @@ impl keyrunes::repository::SettingsRepository for MockSettingsRepository {
         Ok(Some(settings))
     }
 
-    async fn get_settings_by_key(&self, key: &str) -> Result<Option<Settings>> {
+    async fn get_settings_by_key(&self, key: &str, _namespace: &str) -> Result<Option<Settings>> {
         let res = self
             .settings_store
             .lock()
@@ -297,11 +389,12 @@ impl keyrunes::repository::SettingsRepository for MockSettingsRepository {
         &self,
         key: &str,
         _organization_id: Option<i64>,
+        namespace: &str,
     ) -> Result<Option<Settings>> {
-        self.get_settings_by_key(key).await
+        self.get_settings_by_key(key, namespace).await
     }
 
-    async fn get_all_settings(&self) -> Result<Vec<Settings>> {
+    async fn get_all_settings(&self, _namespace: &str) -> Result<Vec<Settings>> {
         let res = self
             .settings_store
             .lock()
@@ -313,7 +406,7 @@ impl keyrunes::repository::SettingsRepository for MockSettingsRepository {
         Ok(res)
     }
 
-    async fn update_settings_by_key(&self, key: &str, value: &str) -> Result<()> {
+    async fn update_settings_by_key(&self, key: &str, value: &str, _namespace: &str) -> Result<()> {
         if let Some(s) = self
             .settings_store
             .lock()
@@ -327,7 +420,7 @@ impl keyrunes::repository::SettingsRepository for MockSettingsRepository {
         Ok(())
     }
 
-    async fn delete_settings_by_key(&self, key: &str) -> Result<()> {
+    async fn delete_settings_by_key(&self, key: &str, _namespace: &str) -> Result<()> {
         self.settings_store.lock().unwrap().retain(|s| s.key != key);
 
         Ok(())
@@ -341,6 +434,7 @@ impl keyrunes::repository::PasswordResetRepository for MockPasswordResetReposito
     async fn create_reset_token(
         &self,
         _token: keyrunes::repository::NewPasswordResetToken,
+        _namespace: &str,
     ) -> Result<keyrunes::repository::PasswordResetToken> {
         unimplemented!()
     }
@@ -348,15 +442,51 @@ impl keyrunes::repository::PasswordResetRepository for MockPasswordResetReposito
     async fn find_valid_token(
         &self,
         _token: &str,
+        _namespace: &str,
     ) -> Result<Option<keyrunes::repository::PasswordResetToken>> {
         Ok(None)
     }
 
-    async fn mark_token_used(&self, _token_id: i64) -> Result<()> {
+    async fn mark_token_used(&self, _token_id: i64, _namespace: &str) -> Result<()> {
         Ok(())
     }
 
-    async fn cleanup_expired_tokens(&self) -> Result<()> {
+    async fn cleanup_expired_tokens(&self, _namespace: &str) -> Result<()> {
+        Ok(())
+    }
+}
+
+struct MockOrganizationRepository;
+
+#[async_trait]
+impl OrganizationRepository for MockOrganizationRepository {
+    async fn find_by_name(&self, _name: &str) -> Result<Option<Organization>> {
+        Ok(Some(OrganizationFactory::create_organization(
+            keyrunes::constants::DEFAULT_ORGANIZATION_ID,
+            "Default".to_string(),
+            DEFAULT_NAMESPACE.to_string(),
+        )))
+    }
+    async fn find_by_id(&self, _organization_id: i64) -> Result<Option<Organization>> {
+        Ok(Some(OrganizationFactory::create_organization(
+            keyrunes::constants::DEFAULT_ORGANIZATION_ID,
+            "Default".to_string(),
+            DEFAULT_NAMESPACE.to_string(),
+        )))
+    }
+    async fn insert_organization(&self, _new_org: NewOrganization) -> Result<Organization> {
+        unimplemented!()
+    }
+    async fn list_organizations(&self) -> Result<Vec<Organization>> {
+        Ok(Vec::new())
+    }
+    async fn find_by_secret_key(&self, _secret_key: Uuid) -> Result<Option<Organization>> {
+        Ok(None)
+    }
+    async fn rotate_secret_key(&self, _organization_id: i64) -> Result<Uuid> {
+        Ok(Uuid::new_v4())
+    }
+    async fn delete_organization(&self, _organization_id: i64) -> Result<()> {
         Ok(())
     }
 }
@@ -393,28 +523,30 @@ fn helper_service() -> UserServiceType {
 
 #[tokio::test]
 async fn test_settings_functionality() {
+    // Setup
     let service = helper_service();
-
     let test_key = String::from("settings test key");
-    let _test_key_update = String::from("settings test key updated");
     let test_value = String::from("settings test value");
     let test_value_update = String::from("settings test value updated");
     let test_description = String::from("settings test description");
 
+    // Act
     let settings_inserted = service
         .settings_service
         .insert_settings(
             test_key.clone(),
             test_value.clone(),
             test_description.clone(),
+            DEFAULT_NAMESPACE,
         )
         .await;
 
+    // Assert
     assert!(settings_inserted.is_ok());
 
     let result_settings = service
         .settings_service
-        .find_settings_by_key(test_key.as_str())
+        .find_settings_by_key(test_key.as_str(), DEFAULT_NAMESPACE)
         .await;
 
     assert!(result_settings.is_ok());
@@ -424,16 +556,22 @@ async fn test_settings_functionality() {
     assert!(result_settings.value == test_value.clone());
     assert!(result_settings.description.unwrap() == test_description);
 
+    // Act
     let result = service
         .settings_service
-        .update_settings(test_key.clone(), test_value_update.clone())
+        .update_settings(
+            test_key.clone(),
+            test_value_update.clone(),
+            DEFAULT_NAMESPACE,
+        )
         .await;
 
+    // Assert
     assert!(result.is_ok());
 
     let updated_result_settings = service
         .settings_service
-        .find_settings_by_key(test_key.as_str())
+        .find_settings_by_key(test_key.as_str(), DEFAULT_NAMESPACE)
         .await;
     assert!(updated_result_settings.is_ok());
 
@@ -442,18 +580,20 @@ async fn test_settings_functionality() {
     assert!(updated_result_settings.key == test_key);
     assert!(updated_result_settings.value == test_value_update);
 
-    let deleted_settings = service
+    // Act
+    let settings_deleted = service
         .settings_service
-        .delete_settings(test_key.clone())
+        .delete_settings(test_key.clone(), DEFAULT_NAMESPACE)
         .await;
 
-    assert!(deleted_settings.is_ok());
+    // Assert
+    assert!(settings_deleted.is_ok());
 
-    let result = service
+    let result_find_deleted = service
         .settings_service
-        .find_settings_by_key(test_key.as_str())
+        .find_settings_by_key(test_key.as_str(), DEFAULT_NAMESPACE)
         .await;
-    assert!(result.is_err());
+    assert!(result_find_deleted.is_err());
 }
 
 #[tokio::test]
@@ -471,7 +611,10 @@ async fn test_register_and_login() {
     };
 
     // Act
-    let auth_response = service.register(req.clone()).await.unwrap();
+    let auth_response = service
+        .register(req.clone(), DEFAULT_NAMESPACE)
+        .await
+        .unwrap();
 
     // Assert
     assert_eq!(auth_response.user.email, user_data.email);
@@ -480,7 +623,11 @@ async fn test_register_and_login() {
 
     // Act
     let login_response = service
-        .login(user_data.email.clone(), "Password123".to_string())
+        .login(
+            user_data.email.clone(),
+            "Password123".to_string(),
+            DEFAULT_NAMESPACE,
+        )
         .await
         .unwrap();
 
@@ -490,7 +637,11 @@ async fn test_register_and_login() {
 
     // Act
     let login_response2 = service
-        .login(user_data.username.clone(), "Password123".to_string())
+        .login(
+            user_data.username.clone(),
+            "Password123".to_string(),
+            DEFAULT_NAMESPACE,
+        )
         .await
         .unwrap();
 
@@ -499,7 +650,11 @@ async fn test_register_and_login() {
 
     // Act
     let err = service
-        .login(user_data.username, "wrongpass".to_string())
+        .login(
+            user_data.username.clone(),
+            "wrongpass".to_string(),
+            DEFAULT_NAMESPACE,
+        )
         .await
         .unwrap_err();
 
@@ -545,8 +700,11 @@ async fn test_duplicate_registration() {
     };
 
     // Act
-    service.register(req.clone()).await.unwrap();
-    let result = service.register(req).await;
+    service
+        .register(req.clone(), DEFAULT_NAMESPACE)
+        .await
+        .unwrap();
+    let result = service.register(req, DEFAULT_NAMESPACE).await;
 
     // Assert
     assert!(result.is_err());
@@ -594,7 +752,8 @@ async fn test_password_validation() {
         organization_id: None,
     };
 
-    let result = service.register(req).await;
+    // Act
+    let result = service.register(req, DEFAULT_NAMESPACE).await;
 
     // Assert
     assert!(result.is_err());
@@ -637,7 +796,10 @@ async fn test_email_validation() {
         organization_id: None,
     };
 
-    let result = service.register(req).await;
+    // Act
+    let result = service.register(req, DEFAULT_NAMESPACE).await;
+
+    // Assert
     assert!(result.is_err());
     assert_eq!(result.unwrap_err().to_string(), "invalid email");
 }
@@ -656,7 +818,7 @@ async fn test_change_password() {
         organization_id: None,
     };
 
-    let auth_response = service.register(req).await.unwrap();
+    let auth_response = service.register(req, DEFAULT_NAMESPACE).await.unwrap();
     let user_id = auth_response.user.user_id;
 
     // Act
@@ -665,17 +827,28 @@ async fn test_change_password() {
         new_password: "NewPassword456".to_string(),
     };
 
-    service.change_password(user_id, change_req).await.unwrap();
+    service
+        .change_password(user_id, change_req, DEFAULT_NAMESPACE)
+        .await
+        .unwrap();
 
     // Assert
     let login_result = service
-        .login(user_data.email.clone(), "NewPassword456".to_string())
+        .login(
+            user_data.email.clone(),
+            "NewPassword456".to_string(),
+            DEFAULT_NAMESPACE,
+        )
         .await;
     assert!(login_result.is_ok());
 
     // Act
     let old_login_result = service
-        .login(user_data.email, "OldPassword123".to_string())
+        .login(
+            user_data.email.clone(),
+            "OldPassword123".to_string(),
+            DEFAULT_NAMESPACE,
+        )
         .await;
 
     // Assert
@@ -719,27 +892,31 @@ async fn admin_create_user_with_groups() {
                 email: Email::try_from("admin@example.com").unwrap(),
                 username: "admin".to_string(),
                 password: Password::try_from("Password123").unwrap(),
-                groups: Some(vec!["superadmin".to_string()]),
+                groups: Some(vec![keyrunes::constants::SUPERADMIN_GROUP.to_string()]),
                 first_login: false,
-                organization_id: 1,
+                organization_id: keyrunes::constants::DEFAULT_ORGANIZATION_ID,
             },
             None,
+            DEFAULT_NAMESPACE,
         )
         .await
         .unwrap();
 
     // Act
     let test_group = group_service
-        .create_group(CreateGroupRequest {
-            organization_id: 1,
-            name: "test".to_string(),
-            description: Some("Test Group".to_string()),
-        })
+        .create_group(
+            CreateGroupRequest {
+                organization_id: keyrunes::constants::DEFAULT_ORGANIZATION_ID,
+                name: "test".to_string(),
+                description: Some("Test Group".to_string()),
+            },
+            DEFAULT_NAMESPACE,
+        )
         .await
         .unwrap();
 
     // Assert
-    assert_eq!(group_store.lock().unwrap().len(), 3);
+    assert_eq!(group_store.lock().unwrap().len(), 5);
 
     // Act
     let test_user = service
@@ -748,11 +925,15 @@ async fn admin_create_user_with_groups() {
                 email: Email::try_from("testuser@example.com").unwrap(),
                 username: "testuser".to_string(),
                 password: Password::try_from("Password123").unwrap(),
-                groups: Some(vec!["users".to_string(), test_group.name]),
+                groups: Some(vec![
+                    keyrunes::constants::USERS_GROUP.to_string(),
+                    test_group.name.clone(),
+                ]),
                 first_login: false,
-                organization_id: 1,
+                organization_id: keyrunes::constants::DEFAULT_ORGANIZATION_ID,
             },
             Some(superadmin.user_id),
+            DEFAULT_NAMESPACE,
         )
         .await;
 
@@ -761,7 +942,13 @@ async fn admin_create_user_with_groups() {
     let test_user = test_user.unwrap();
     assert_eq!(test_user.email, "testuser@example.com");
     assert_eq!(test_user.username, "testuser");
-    assert_eq!(test_user.groups, &["users", "test"]);
+    assert_eq!(
+        test_user.groups,
+        vec![
+            keyrunes::constants::USERS_GROUP.to_string(),
+            test_group.name
+        ]
+    );
 
     // Act
     let test_user = service
@@ -770,11 +957,15 @@ async fn admin_create_user_with_groups() {
                 email: Email::try_from("testuser2@example.com").unwrap(),
                 username: "testuser2".to_string(),
                 password: Password::try_from("Password123").unwrap(),
-                groups: Some(vec!["users".to_string(), "invalid".to_string()]),
+                groups: Some(vec![
+                    keyrunes::constants::USERS_GROUP.to_string(),
+                    "invalid".to_string(),
+                ]),
                 first_login: false,
-                organization_id: 1,
+                organization_id: keyrunes::constants::DEFAULT_ORGANIZATION_ID,
             },
             Some(superadmin.user_id),
+            DEFAULT_NAMESPACE,
         )
         .await;
 
@@ -784,4 +975,39 @@ async fn admin_create_user_with_groups() {
         test_user.err().unwrap().to_string(),
         "invalid group specified: `invalid`"
     )
+}
+
+#[tokio::test]
+async fn test_register_first_user_in_namespace() {
+    // Setup
+    let service = helper_service();
+
+    // Act - Register first user in public namespace
+    let reg1 = RegisterRequest {
+        email: "first_public@example.com".to_string(),
+        username: "first_public".to_string(),
+        password: "Password123".to_string(),
+        first_login: None,
+        organization_id: Some(1),
+    };
+    let res1 = service.register(reg1, DEFAULT_NAMESPACE).await.unwrap();
+
+    // Assert - Should have superadmin and users groups
+    assert!(res1.user.groups.contains(&"superadmin".to_string()));
+    assert!(res1.user.groups.contains(&"users".to_string()));
+
+    // Act - Register first user in a different namespace/org
+    let reg2 = RegisterRequest {
+        email: "first_org@example.com".to_string(),
+        username: "first_org".to_string(),
+        password: "Password123".to_string(),
+        first_login: None,
+        organization_id: Some(2),
+    };
+    let res2 = service.register(reg2, "org_2").await.unwrap();
+
+    // Assert - Should have admin and users groups
+    assert!(res2.user.groups.contains(&"admin".to_string()));
+    assert!(res2.user.groups.contains(&"users".to_string()));
+    assert!(!res2.user.groups.contains(&"superadmin".to_string()));
 }

@@ -77,6 +77,9 @@
   <div id="organizations-tab" class="tab-content">
     <div style="display: flex; justify-content: space-between; align-items: center; margin: 1rem 0;">
       <h3>Organizations</h3>
+      {% if user.namespace == "public" %}
+      <button onclick="showCreateOrganizationModal()">Create Organization</button>
+      {% endif %}
     </div>
 
     <table>
@@ -106,7 +109,7 @@
     <div class="card" style="background: var(--card-bg, #f8f9fa); margin-top: 1rem;">
       <h4>Check User Permission</h4>
       <form hx-post="/api/admin/check-permission" hx-target="#permission-result" hx-swap="innerHTML"
-        hx-indicator="#check-permission-indicator">
+        hx-indicator="#check-permission-indicator" hx-ext="json-enc">
         <label>User ID:</label>
         <input type="number" name="user_id" required>
 
@@ -135,7 +138,7 @@
     <button class="modal-close" onclick="closeModal('createUserModal')">&times;</button>
     <h3>Create New User</h3>
     <form hx-post="/api/admin/user" hx-target="#messages" hx-swap="innerHTML" hx-indicator="#create-user-indicator"
-      hx-on::after-request="handleUserCreated(event)">
+      hx-on::after-request="handleUserCreated(event)" hx-ext="json-enc">
       <label>Email:</label>
       <input type="hidden" name="organization_id" value="1">
       <input type="email" name="email" id="user-email" required>
@@ -144,7 +147,7 @@
       <input type="text" name="username" id="user-username" required>
 
       <label>Password:</label>
-      <input type="password" name="password" id="user-password" required>
+      <input type="text" name="password" id="user-password" required minlength="8" placeholder="Min. 8 characters">
 
       <label>
         <input type="checkbox" name="first_login" id="user-first-login" value="true">
@@ -159,13 +162,43 @@
   </div>
 </div>
 
+</div>
+
+<!-- Modal: Edit User -->
+<div id="editUserModal" class="modal">
+  <div class="modal-content card">
+    <button class="modal-close" onclick="closeModal('editUserModal')">&times;</button>
+    <h3>Edit User</h3>
+    <form hx-patch="/api/admin/users/0" hx-target="#messages" hx-swap="innerHTML" hx-indicator="#edit-user-indicator"
+      hx-on::after-request="handleUserUpdated(event)" hx-ext="json-enc" id="edit-user-form">
+      <input type="hidden" name="user_id" id="edit-user-id">
+
+      <label>Email:</label>
+      <input type="email" name="email" id="edit-user-email" required>
+
+      <label>Username:</label>
+      <input type="text" name="username" id="edit-user-username" required>
+
+      <label>
+        <input type="checkbox" name="first_login" id="edit-user-first-login">
+        Require password change
+      </label>
+
+      <button type="submit">
+        <span class="htmx-indicator" id="edit-user-indicator">Updating...</span>
+        Update User
+      </button>
+    </form>
+  </div>
+</div>
+
 <!-- Modal: Create Group -->
 <div id="createGroupModal" class="modal">
   <div class="modal-content card">
     <button class="modal-close" onclick="closeModal('createGroupModal')">&times;</button>
     <h3>Create New Group</h3>
     <form hx-post="/api/admin/groups" hx-target="#messages" hx-swap="innerHTML" hx-indicator="#create-group-indicator"
-      hx-on::after-request="handleGroupCreated(event)">
+      hx-on::after-request="handleGroupCreated(event)" hx-ext="json-enc">
       <label>Group Name:</label>
       <input type="hidden" name="organization_id" value="1">
       <input type="text" name="name" id="group-name" required>
@@ -192,7 +225,46 @@
   </div>
 </div>
 
+<!-- Modal: Create Organization -->
+<div id="createOrganizationModal" class="modal">
+  <div class="modal-content card">
+    <button class="modal-close" onclick="closeModal('createOrganizationModal')">&times;</button>
+    <h3>Create New Organization</h3>
+    <form hx-post="/api/admin/organizations" hx-target="#messages" hx-swap="innerHTML"
+      hx-indicator="#create-org-indicator" hx-on::after-request="handleOrganizationCreated(event)" hx-ext="json-enc">
+      <label>Organization Name:</label>
+      <input type="text" name="name" id="org-name" required>
+
+      <label>Description:</label>
+      <textarea name="description" id="org-description" rows="3"></textarea>
+
+      <button type="submit">
+        <span class="htmx-indicator" id="create-org-indicator">Creating...</span>
+        Create Organization
+      </button>
+    </form>
+  </div>
+</div>
+
 <script>
+  function getOrgId() {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('org_id') || {{ user.organization_id }};
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    const orgId = getOrgId();
+    document.querySelectorAll('input[name="organization_id"]').forEach(input => {
+      input.value = orgId;
+    });
+
+    if (orgId != 1) {
+      const header = document.querySelector('h1');
+      header.innerText += ` (Organization ID: ${orgId})`;
+    }
+  });
+
+
   function showTab(tabName) {
     document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
     document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
@@ -200,7 +272,6 @@
     document.getElementById(tabName + '-tab').classList.add('active');
     event.target.classList.add('active');
 
-    // Load data for the active tab
     if (tabName === 'users') {
       loadUsers();
     } else if (tabName === 'groups') {
@@ -222,13 +293,76 @@
     showModal('createUserModal');
   }
 
+  function showEditUserModal(userId, email, username, firstLogin) {
+    document.getElementById('edit-user-id').value = userId;
+    document.getElementById('edit-user-email').value = email;
+    document.getElementById('edit-user-username').value = username;
+    document.getElementById('edit-user-first-login').checked = firstLogin;
+
+    const form = document.getElementById('edit-user-form');
+    form.setAttribute('hx-patch', `/api/admin/users/${userId}?org_id=${getOrgId()}`);
+    htmx.process(form);
+
+    showModal('editUserModal');
+  }
+
+  function handleUserUpdated(event) {
+    if (event.detail.successful) {
+      closeModal('editUserModal');
+      loadUsers();
+      showMessage('User updated successfully!', 'success');
+    } else {
+      const errorText = event.detail.xhr?.responseText || 'Unknown error';
+      showMessage('Error updating user: ' + errorText, 'error');
+    }
+  }
+
+  function resetUserPassword(userId) {
+    if (!confirm(`Are you sure you want to reset the password for user ID ${userId}?\nA temporary password will be generated.`)) return;
+
+    fetch(`/api/admin/users/${userId}/reset-password?org_id=${getOrgId()}`, {
+      method: 'POST',
+      credentials: 'include'
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (data.temporary_password) {
+          alert(`Success! Temporary Password: ${data.temporary_password}\n(Copy this now, it won't be shown again)`);
+        } else {
+          showMessage('Error resetting password: ' + (data.error || 'Unknown error'), 'error');
+        }
+      })
+      .catch(err => showMessage('Error resetting password: ' + err.message, 'error'));
+  }
+
+  function sendResetEmail(userId) {
+    if (!confirm(`Send password reset email to user ID ${userId}?`)) return;
+
+    fetch(`/api/admin/users/${userId}/send-reset?org_id=${getOrgId()}`, {
+      method: 'POST',
+      credentials: 'include'
+    })
+      .then(r => {
+        if (r.ok) {
+          showMessage('Reset email sent successfully!', 'success');
+        } else {
+          r.text().then(msg => showMessage('Error sending email: ' + msg, 'error'));
+        }
+      })
+      .catch(err => showMessage('Error sending email: ' + err.message, 'error'));
+  }
+
   function showCreateGroupModal() {
     showModal('createGroupModal');
   }
 
+  function showCreateOrganizationModal() {
+    showModal('createOrganizationModal');
+  }
+
   function updateAssignFormAction(select, userId) {
     const form = select.closest('form');
-    form.setAttribute('hx-post', `/api/admin/users/${userId}/groups/${select.value}`);
+    form.setAttribute('hx-post', `/api/admin/users/${userId}/groups/${select.value}?org_id=${getOrgId()}`);
     htmx.process(form); // Re-process to pick up the new hx-post
   }
 
@@ -237,8 +371,7 @@
       return;
     }
 
-    // First, get the group ID from the group name
-    fetch('/api/admin/groups', {
+    fetch(`/api/admin/groups?org_id=${getOrgId()}`, {
       credentials: 'include'
     })
       .then(r => r.json())
@@ -249,8 +382,7 @@
           return;
         }
 
-        // Use fetch to delete (HTMX doesn't handle DELETE well with dynamic URLs)
-        fetch(`/api/admin/users/${userId}/groups/${group.group_id}`, {
+        fetch(`/api/admin/users/${userId}/groups/${group.group_id}?org_id=${getOrgId()}`, {
           method: 'DELETE',
           credentials: 'include'
         })
@@ -277,7 +409,7 @@
     const modal = document.getElementById('assignGroupModal');
     const container = document.getElementById('assign-group-form-container');
 
-    fetch('/api/admin/groups', {
+    fetch(`/api/admin/groups?org_id=${getOrgId()}`, {
       credentials: 'include'
     })
       .then(r => r.json())
@@ -287,7 +419,8 @@
             hx-target="#messages"
             hx-swap="innerHTML"
             hx-indicator="#assign-group-indicator"
-            hx-on::after-request="handleGroupAssigned(event)">
+            hx-on::after-request="handleGroupAssigned(event)"
+            hx-ext="json-enc">
         <label>Select Group:</label>
         <select name="group_id" id="assign-group-select" required onchange="updateAssignFormAction(this, ${userId})">
           <option value="">Select a group...</option>
@@ -311,7 +444,6 @@
       closeModal('createUserModal');
       loadUsers();
       showMessage('User created successfully!', 'success');
-      // Reset form
       document.querySelector('#createUserModal form').reset();
     } else {
       const errorText = event.detail.xhr?.responseText || 'Unknown error';
@@ -324,11 +456,22 @@
       closeModal('createGroupModal');
       loadGroups();
       showMessage('Group created successfully!', 'success');
-      // Reset form
       document.querySelector('#createGroupModal form').reset();
     } else {
       const errorText = event.detail.xhr?.responseText || 'Unknown error';
       showMessage('Error creating group: ' + errorText, 'error');
+    }
+  }
+
+  function handleOrganizationCreated(event) {
+    if (event.detail.successful) {
+      closeModal('createOrganizationModal');
+      loadOrganizations();
+      showMessage('Organization created successfully!', 'success');
+      document.querySelector('#createOrganizationModal form').reset();
+    } else {
+      const errorText = event.detail.xhr?.responseText || 'Unknown error';
+      showMessage('Error creating organization: ' + errorText, 'error');
     }
   }
 
@@ -354,7 +497,7 @@
 
   function loadUsers() {
     const tbody = document.getElementById('users-list');
-    fetch('/api/admin/users', {
+    fetch(`/api/admin/users?org_id=${getOrgId()}`, {
       credentials: 'include'
     })
       .then(r => r.json())
@@ -387,7 +530,13 @@
           <td>${groupsDisplay}</td>
           <td>${new Date(user.created_at).toLocaleDateString()}</td>
           <td>
-            <button onclick="showAssignGroupModal(${user.user_id})">Assign Group</button>
+            <button onclick="showAssignGroupModal(${user.user_id})" class="btn-sm">Assign Group</button>
+            <button onclick="showEditUserModal(${user.user_id}, '${user.email}', '${user.username}', ${user.first_login})" class="btn-sm btn-primary" style="background: var(--primary, #007bff); color: white;">Edit</button>
+            <button onclick="deleteUser(${user.user_id}, '${user.username}')" class="btn-sm btn-danger" style="background-color: var(--error-bg, #f8d7da); color: var(--error-color, #721c24);">Delete</button>
+            <div style="margin-top: 4px;">
+                <button onclick="resetUserPassword(${user.user_id})" class="btn-sm btn-warning" style="background: var(--warning, #ffc107); color: black;">Reset PWD</button>
+                <button onclick="sendResetEmail(${user.user_id})" class="btn-sm btn-info" style="background: var(--info, #17a2b8); color: white;">Send Email</button>
+            </div>
           </td>
         </tr>
       `;
@@ -399,9 +548,29 @@
       });
   }
 
+  function deleteUser(userId, username) {
+    if (!confirm(`Are you sure you want to delete user "${username}" (ID: ${userId})? This action cannot be undone.`)) {
+      return;
+    }
+
+    fetch(`/api/admin/users/${userId}?org_id=${getOrgId()}`, {
+      method: 'DELETE',
+      credentials: 'include'
+    })
+      .then(r => {
+        if (r.ok) {
+          showMessage(`User "${username}" deleted successfully.`, 'success');
+          loadUsers();
+        } else {
+          return r.text().then(msg => showMessage('Error deleting user: ' + msg, 'error'));
+        }
+      })
+      .catch(err => showMessage('Error deleting user: ' + err.message, 'error'));
+  }
+
   function loadGroups() {
     const tbody = document.getElementById('groups-list');
-    fetch('/api/admin/groups', {
+    fetch(`/api/admin/groups?org_id=${getOrgId()}`, {
       credentials: 'include'
     })
       .then(r => r.json())
@@ -427,7 +596,7 @@
 
   function loadOrganizations() {
     const tbody = document.getElementById('organizations-list');
-    fetch('/api/organizations', {
+    fetch('/api/admin/organizations', {
       credentials: 'include'
     })
       .then(r => r.json())
@@ -465,14 +634,13 @@
       return;
     }
 
-    fetch(`/api/organizations/${orgId}/rotate-key`, {
+    fetch(`/api/admin/organizations/${orgId}/rotate-key`, {
       method: 'POST',
       credentials: 'include'
     })
       .then(r => r.json())
       .then(data => {
         if (data.secret_key) {
-          // Update the key in the URI
           const codeElement = document.getElementById(`key-${orgId}`);
           if (codeElement) {
             codeElement.textContent = data.secret_key;
@@ -489,7 +657,6 @@
       });
   }
 
-  // Handle HTMX responses
   document.body.addEventListener('htmx:afterSwap', function (evt) {
     if (evt.detail.target.id === 'permission-result') {
       try {
@@ -511,7 +678,6 @@
     }
   });
 
-  // Load initial data
   loadUsers();
 </script>
 {% endblock content %}

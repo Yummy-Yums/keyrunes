@@ -24,17 +24,30 @@
   </div>
 </section>
 
+<section class="card" id="org-list-section" style="display: none; margin-top: 1rem;">
+  <h2>Your Organizations</h2>
+  <div id="org-list-content">Loading...</div>
+</section>
+
 <section class="card" id="superadmin-section" style="display: none; margin-top: 1rem;">
   <h2>System Administration</h2>
   <h3>Create New Organization</h3>
   <div id="create-org-message"></div>
-  <form hx-post="/api/organizations" hx-target="#create-org-message" hx-swap="innerHTML"
-    hx-indicator="#create-org-indicator" hx-on::after-request="handleOrgCreation(event)">
-    <label for="org_name">Organization Name</label>
-    <input type="text" id="org_name" name="name" required placeholder="My New Company" />
+  <form hx-post="/api/admin/organizations" hx-target="#create-org-message" hx-swap="innerHTML"
+    hx-indicator="#create-org-indicator" hx-on::after-request="handleOrgCreation(event)" hx-ext="json-enc">
+    <label>Organization Name:</label>
+    <input type="text" name="name" id="org-name" required oninput="generateNamespace(this.value)">
 
-    <label for="org_description">Description (Optional)</label>
-    <textarea id="org_description" name="description" placeholder="A brief description"></textarea>
+    <label>Namespace (Schema Name):</label>
+    <input type="text" name="namespace" id="org-namespace" required pattern="[a-zA-Z0-9_]+"
+      title="Alphanumeric and underscores only">
+    <small>Used for database schema isolation. Must be unique.</small>
+
+    <label>Base URL (Optional):</label>
+    <input type="url" name="base_url" id="org-base-url" placeholder="https://tenant.example.com">
+
+    <label>Description:</label>
+    <textarea name="description" id="org-description" rows="3"></textarea>
 
     <button type="submit" class="btn btn-primary">
       <span class="htmx-indicator" id="create-org-indicator">Creating...</span>
@@ -75,7 +88,7 @@
         evt.detail.target.innerHTML = `
         <div class="message message-success">
           Welcome, <strong>${user.username}</strong>! (${user.email})<br>
-          <small>Organization ID: ${user.organization_id}</small>
+          <small>Organization ID: ${user.organization_id} | Namespace: <strong>${user.namespace}</strong></small>
         </div>
         
         <h3>Your Groups</h3>
@@ -101,10 +114,13 @@
         const isSuperadmin = user.groups && user.groups.includes('superadmin');
         const isAdmin = user.groups && (user.groups.includes('admin') || isSuperadmin);
 
-        if (isSuperadmin) {
+        if (isSuperadmin && user.namespace === 'public') {
           const saSection = document.getElementById('superadmin-section');
           if (saSection) saSection.style.display = 'block';
 
+          const adminLink = document.getElementById('admin-panel-link');
+          if (adminLink) adminLink.style.display = 'inline-block';
+        } else if (isAdmin) {
           const adminLink = document.getElementById('admin-panel-link');
           if (adminLink) adminLink.style.display = 'inline-block';
         }
@@ -136,6 +152,41 @@
               .catch(err => {
                 document.getElementById('org-secret-content').innerHTML = `<p class="message message-error">Error loading secret.</p>`;
               });
+
+            const orgListSection = document.getElementById('org-list-section');
+            if (orgListSection) {
+              orgListSection.style.display = 'block';
+              fetch('/api/admin/organizations', { credentials: 'include' })
+                .then(r => r.json())
+                .then(orgs => {
+                  if (Array.isArray(orgs)) {
+                    const listHtml = orgs.map(org => {
+                      const deleteBtn = (user.namespace === 'public')
+                        ? `<button class="btn btn-sm btn-danger" onclick="deleteOrganization(${org.organization_id}, '${org.name}')" style="background: #dc3545; color: white; border: none; padding: 0.2rem 0.5rem; border-radius: 4px; cursor: pointer; margin-left: 0.5rem;">Delete</button>`
+                        : '';
+
+                      return `
+                      <div style="border-bottom: 1px solid #eee; padding: 0.5rem 0; display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                          <strong>${org.name}</strong> (ID: ${org.organization_id})
+                          <br><small>${org.description || 'No description'}</small>
+                        </div>
+                        <div>
+                          <a href="/admin?org_id=${org.organization_id}" class="btn btn-sm btn-secondary">Manage</a>
+                          ${deleteBtn}
+                        </div>
+                      </div>
+                    `}).join('');
+                    document.getElementById('org-list-content').innerHTML = listHtml || 'No organizations found.';
+                  } else {
+                    document.getElementById('org-list-content').innerHTML = '<p>No organizations found.</p>';
+                  }
+                })
+                .catch(e => {
+                  console.error("Failed to load orgs", e);
+                  document.getElementById('org-list-content').innerHTML = '<p class="message message-error">Failed to load organizations.</p>';
+                });
+            }
           }
         }
       } catch (e) {
@@ -147,6 +198,32 @@
       }
     }
   });
+
+  function generateNamespace(name) {
+    const namespaceInput = document.getElementById('org-namespace');
+    if (namespaceInput) {
+      const slug = name.toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_');
+      namespaceInput.value = slug;
+    }
+  }
+
+  function deleteOrganization(orgId, orgName) {
+    if (!confirm(`Are you sure you want to delete organization "${orgName}"? This action cannot be undone.`)) return;
+
+    fetch(`/api/admin/organizations/${orgId}`, {
+      method: 'DELETE',
+      credentials: 'include'
+    })
+      .then(r => {
+        if (r.ok) {
+          alert(`Organization "${orgName}" deleted successfully.`);
+          window.location.reload();
+        } else {
+          r.text().then(msg => alert('Error deleting organization: ' + msg));
+        }
+      })
+      .catch(err => alert('Error deleting organization: ' + err.message));
+  }
 
   function rotateOrgKey() {
     if (!confirm('Are you sure you want to rotate the organization secret? The old key will stop working immediately.')) return;
