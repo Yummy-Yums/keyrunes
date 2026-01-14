@@ -78,7 +78,7 @@ async fn main() -> anyhow::Result<()> {
 
     let jwt_secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| {
         tracing::warn!(
-            "⚠️  JWT_SECRET not seted, starting deafault token (DON'T USE IN PRODUCTION)"
+            "⚠️  JWT_SECRET not sent, starting default token (DON'T USE IN PRODUCTION)"
         );
         "your-super-secret-jwt-key-change-in-production".into()
     });
