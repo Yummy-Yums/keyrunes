@@ -22,6 +22,7 @@ use tracing_subscriber::filter::LevelFilter;
 
 #[derive(Parser)]
 #[clap(name = "Keyrunes CLI")]
+#[clap(version)]
 #[clap(about = "Use keyrunes via cli as sysadmin, or developer")]
 struct Cli {
     #[clap(subcommand)]
@@ -130,6 +131,8 @@ enum Commands {
         #[clap(long)]
         namespace: String,
     },
+    /// Run database migrations
+    Migrate,
 }
 
 #[tokio::main]
@@ -171,15 +174,6 @@ async fn main() -> anyhow::Result<()> {
         settings_service,
         email_service.clone(),
     ));
-
-    let base_url_settings: HashMap<String, String> = HashMap::from_iter(
-        &mut service
-            .settings_service
-            .get_all_settings(DEFAULT_NAMESPACE)
-            .await?
-            .iter()
-            .map(|setting| (setting.key.clone(), setting.value.clone())),
-    );
 
     match cli.command {
         Commands::Register {
@@ -308,6 +302,15 @@ async fn main() -> anyhow::Result<()> {
                 .password_reset_repo
                 .create_reset_token(new_password_token, DEFAULT_NAMESPACE)
                 .await?;
+
+            let base_url_settings: HashMap<String, String> = HashMap::from_iter(
+                &mut service
+                    .settings_service
+                    .get_all_settings(DEFAULT_NAMESPACE)
+                    .await?
+                    .iter()
+                    .map(|setting| (setting.key.clone(), setting.value.clone())),
+            );
 
             let default_url = "http://localhost:3000".to_string();
             let base_url = base_url_settings.get("BASE_URL").unwrap_or(&default_url);
@@ -614,6 +617,16 @@ async fn main() -> anyhow::Result<()> {
                     }
                 }
                 Err(e) => eprintln!("Error finding organization: {}", e),
+            }
+        }
+        Commands::Migrate => {
+            tracing::info!("🏃 Running migrations...");
+            match sqlx::migrate!("./migrations").run(&pool).await {
+                Ok(_) => tracing::info!("✅ Migrations completed successfully!"),
+                Err(e) => {
+                    eprintln!("❌ Migration failed: {}", e);
+                    std::process::exit(1);
+                }
             }
         }
     }

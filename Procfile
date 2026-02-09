@@ -1,2 +1,2 @@
 web: keyrunes
-release: keyrunes-cli --version
+release: keyrunes-cli migrate
