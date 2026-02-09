@@ -260,8 +260,10 @@ async fn main() -> anyhow::Result<()> {
         .layer(Extension(pool))
         .layer(from_fn(request_logging_middleware));
 
-    let listener = TcpListener::bind("0.0.0.0:3000").await.unwrap();
-    tracing::info!("🛡️ KeyRunes server starting on http://0.0.0.0:3000");
+    let port = std::env::var("PORT").unwrap_or_else(|_| "3000".to_string());
+    let addr = format!("0.0.0.0:{}", port);
+    let listener = TcpListener::bind(&addr).await.unwrap();
+    tracing::info!("🛡️ KeyRunes server starting on http://{}", addr);
     tracing::info!("📚 Available endpoints:");
     tracing::info!("  • Swagger UI: /swagger-ui/");
     tracing::info!("  • Health: /api/health, /api/health/ready, /api/health/live");

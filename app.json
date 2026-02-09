@@ -1,0 +1,14 @@
+{
+  "name": "keyrunes",
+  "description": "Auth server focusing on simplicity and security",
+  "keywords": [
+    "auth",
+    "rust",
+    "security"
+  ],
+  "scripts": {
+    "dokku": {
+      "postdeploy": "echo 'Deployment finished!'"
+    }
+  }
+}
