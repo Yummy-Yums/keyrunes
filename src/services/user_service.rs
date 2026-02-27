@@ -1,8 +1,8 @@
-use crate::constants::{SUPERADMIN_GROUP, USERS_GROUP};
+use crate::constants::{ADMIN_GROUP, SUPERADMIN_GROUP, USERS_GROUP};
 use crate::domain::user::{Email, Password};
 use crate::repository::{
-    CreateSettings, GroupRepository, NewPasswordResetToken, NewUser, PasswordResetRepository,
-    Settings, SettingsRepository, UserRepository,
+    CreateSettings, GroupRepository, NewGroup, NewPasswordResetToken, NewUser, PasswordResetRepository,
+    Settings, SettingsRepository, UserRepository, OrganizationRepository,
 };
 use crate::services::email_service::EmailService;
 use crate::services::jwt_service::JwtService;
@@ -24,6 +24,8 @@ use uuid::Uuid;
 pub struct UserResponse {
     pub user_id: i64,
     pub external_id: Uuid,
+    #[serde(rename = "id")]
+    pub id: Uuid,
     #[schema(example = "user@example.com")]
     pub email: String,
     #[schema(example = "username")]
@@ -67,6 +69,7 @@ pub struct RegisterRequest {
     pub username: String,
     pub password: String,
     pub first_login: Option<bool>,
+    pub group: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, ToSchema)]
@@ -123,9 +126,11 @@ pub struct UserService<
     G: GroupRepository,
     P: PasswordResetRepository,
     S: SettingsRepository,
+    O: OrganizationRepository,
 > {
     pub user_repo: Arc<U>,
     pub group_repo: Arc<G>,
+    pub org_repo: Arc<O>,
     pub password_reset_repo: Arc<P>,
     pub jwt_service: Arc<JwtService>,
     #[allow(dead_code)]
@@ -133,13 +138,14 @@ pub struct UserService<
     pub email_service: Option<Arc<EmailService>>,
 }
 
-impl<U: UserRepository, G: GroupRepository, P: PasswordResetRepository, S: SettingsRepository>
-    UserService<U, G, P, S>
+impl<U: UserRepository, G: GroupRepository, P: PasswordResetRepository, S: SettingsRepository, O: OrganizationRepository>
+    UserService<U, G, P, S, O>
 {
     /// Creates a new `UserService` instance.
     pub fn new(
         user_repo: Arc<U>,
         group_repo: Arc<G>,
+        org_repo: Arc<O>,
         password_reset_repo: Arc<P>,
         jwt_service: Arc<JwtService>,
         settings_service: Arc<SettingsService<S>>,
@@ -148,6 +154,7 @@ impl<U: UserRepository, G: GroupRepository, P: PasswordResetRepository, S: Setti
         Self {
             user_repo,
             group_repo,
+            org_repo,
             password_reset_repo,
             jwt_service,
             settings_service,
@@ -215,6 +222,7 @@ impl<U: UserRepository, G: GroupRepository, P: PasswordResetRepository, S: Setti
         Ok(UserResponse {
             user_id: user.user_id,
             external_id: user.external_id,
+            id: user.external_id,
             email: user.email,
             username: user.username,
             password_hash: user.password_hash,
@@ -232,15 +240,29 @@ impl<U: UserRepository, G: GroupRepository, P: PasswordResetRepository, S: Setti
     /// * `req` - The registration request data.
     /// * `namespace` - The organization namespace.
     pub async fn register(&self, req: RegisterRequest, namespace: &str) -> Result<AuthResponse> {
+        let organization_id = match req.organization_id {
+            Some(id) => id,
+            None => {
+                if namespace == crate::constants::DEFAULT_NAMESPACE {
+                    crate::constants::DEFAULT_ORGANIZATION_ID
+                } else {
+                    self.org_repo
+                        .find_by_namespace(namespace)
+                        .await?
+                        .map(|o| o.organization_id)
+                        .ok_or_else(|| anyhow!("organization not found for namespace: {}", namespace))?
+                }
+            }
+        };
+
         let user_count = self.user_repo.count_users(namespace).await?;
-        let groups = if user_count == 0 {
+        let groups = if let Some(g) = req.group {
+            Some(vec![g])
+        } else if user_count == 0 {
             if namespace == crate::constants::DEFAULT_NAMESPACE {
                 Some(vec![SUPERADMIN_GROUP.to_string(), USERS_GROUP.to_string()])
             } else {
-                Some(vec![
-                    crate::constants::ADMIN_GROUP.to_string(),
-                    USERS_GROUP.to_string(),
-                ])
+                Some(vec![USERS_GROUP.to_string()])
             }
         } else {
             None
@@ -249,9 +271,7 @@ impl<U: UserRepository, G: GroupRepository, P: PasswordResetRepository, S: Setti
         let user = self
             .create_user(
                 CreateUserRequest {
-                    organization_id: req
-                        .organization_id
-                        .unwrap_or(crate::constants::DEFAULT_ORGANIZATION_ID),
+                    organization_id,
                     email: Email::try_from(req.email.as_str())?,
                     username: req.username,
                     password: Password::try_from(req.password.as_str())?,
@@ -335,6 +355,7 @@ impl<U: UserRepository, G: GroupRepository, P: PasswordResetRepository, S: Setti
             user: UserResponse {
                 user_id: user.user_id,
                 external_id: user.external_id,
+                id: user.external_id,
                 email: user.email,
                 username: user.username,
                 password_hash: user.password_hash,
@@ -419,6 +440,7 @@ impl<U: UserRepository, G: GroupRepository, P: PasswordResetRepository, S: Setti
         Ok(UserResponse {
             user_id: user.user_id,
             external_id: user.external_id,
+            id: user.external_id,
             email: user.email,
             username: user.username,
             password_hash: user.password_hash,
@@ -542,6 +564,7 @@ impl<U: UserRepository, G: GroupRepository, P: PasswordResetRepository, S: Setti
             .map(|u| UserResponse {
                 user_id: u.user_id,
                 external_id: u.external_id,
+                id: u.external_id,
                 email: u.email,
                 username: u.username,
                 password_hash: u.password_hash,
@@ -562,6 +585,7 @@ impl<U: UserRepository, G: GroupRepository, P: PasswordResetRepository, S: Setti
             .map(|u| UserResponse {
                 user_id: u.user_id,
                 external_id: u.external_id,
+                id: u.external_id,
                 email: u.email,
                 username: u.username,
                 password_hash: u.password_hash,
@@ -595,6 +619,7 @@ impl<U: UserRepository, G: GroupRepository, P: PasswordResetRepository, S: Setti
         Ok(UserResponse {
             user_id: user.user_id,
             external_id: user.external_id,
+            id: user.external_id,
             email: user.email,
             username: user.username,
             password_hash: user.password_hash,
@@ -649,6 +674,7 @@ impl<U: UserRepository, G: GroupRepository, P: PasswordResetRepository, S: Setti
         Ok(UserResponse {
             user_id: user.user_id,
             external_id: user.external_id,
+            id: user.external_id,
             email: user.email,
             username: user.username,
             password_hash: user.password_hash,
@@ -752,6 +778,26 @@ impl<U: UserRepository, G: GroupRepository, P: PasswordResetRepository, S: Setti
                 .await
             {
                 group_ids.push(users_group.group_id);
+            } else if group == USERS_GROUP {
+                // Auto-create users group if it doesn't exist
+                let new_group = NewGroup {
+                    external_id: Uuid::new_v4(),
+                    organization_id,
+                    name: USERS_GROUP.to_string(),
+                    description: Some("Standard users of the organization".to_string()),
+                };
+                let users_group = self.group_repo.insert_group(new_group, namespace).await?;
+                group_ids.push(users_group.group_id);
+            } else if group == ADMIN_GROUP {
+                // Auto-create admin group if it doesn't exist
+                let new_group = NewGroup {
+                    external_id: Uuid::new_v4(),
+                    organization_id,
+                    name: ADMIN_GROUP.to_string(),
+                    description: Some("Administrators of the organization".to_string()),
+                };
+                let admin_group = self.group_repo.insert_group(new_group, namespace).await?;
+                group_ids.push(admin_group.group_id);
             } else {
                 return Err(anyhow!("invalid group specified: `{}`", group));
             }
@@ -851,7 +897,7 @@ impl<S: SettingsRepository> SettingsService<S> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::repository::{CreateSettings, Group, NewGroup, Policy, Settings, User};
+    use crate::repository::{CreateSettings, Group, NewGroup, Policy, Settings, User, Organization, NewOrganization};
     use anyhow::Result;
     use async_trait::async_trait;
     use chrono::Utc;
@@ -1071,42 +1117,38 @@ mod tests {
     struct MockSettingsRepository;
     #[async_trait]
     impl SettingsRepository for MockSettingsRepository {
-        async fn get_all_settings(&self, _namespace: &str) -> Result<Vec<Settings>> {
-            Ok(Vec::new())
+        async fn get_all_settings(&self, _namespace: &str) -> Result<Vec<Settings>> { Ok(Vec::new()) }
+        async fn get_settings_by_key(&self, _key: &str, _namespace: &str) -> Result<Option<Settings>> { Ok(None) }
+        async fn create_settings(&self, _s: CreateSettings, _ns: &str) -> Result<Option<CreateSettings>> { Ok(None) }
+        async fn update_settings_by_key(&self, _k: &str, _v: &str, _ns: &str) -> Result<()> { Ok(()) }
+        async fn delete_settings_by_key(&self, _k: &str, _ns: &str) -> Result<()> { Ok(()) }
+        async fn get_setting_by_key_and_org(&self, _k: &str, _o: Option<i64>, _ns: &str) -> Result<Option<Settings>> { Ok(None) }
+    }
+    
+    #[allow(dead_code)]
+    struct MockOrganizationRepository;
+    #[async_trait]
+    impl OrganizationRepository for MockOrganizationRepository {
+        async fn find_by_name(&self, _name: &str) -> Result<Option<Organization>> { Ok(None) }
+        async fn find_by_id(&self, _id: i64) -> Result<Option<Organization>> { Ok(None) }
+        async fn find_by_namespace(&self, _namespace: &str) -> Result<Option<Organization>> { 
+            Ok(Some(Organization {
+                organization_id: 1,
+                external_id: Uuid::new_v4(),
+                name: "test".to_string(),
+                description: None,
+                namespace: "test".to_string(),
+                base_url: None,
+                secret_key: Uuid::new_v4(),
+                created_at: Utc::now(),
+                updated_at: Utc::now(),
+            }))
         }
-        async fn get_settings_by_key(
-            &self,
-            _key: &str,
-            _namespace: &str,
-        ) -> Result<Option<Settings>> {
-            Ok(None)
-        }
-        async fn create_settings(
-            &self,
-            _settings: CreateSettings,
-            _namespace: &str,
-        ) -> Result<Option<CreateSettings>> {
-            Ok(None)
-        }
-        async fn update_settings_by_key(
-            &self,
-            _key: &str,
-            _value: &str,
-            _namespace: &str,
-        ) -> Result<()> {
-            Ok(())
-        }
-        async fn delete_settings_by_key(&self, _key: &str, _namespace: &str) -> Result<()> {
-            Ok(())
-        }
-        async fn get_setting_by_key_and_org(
-            &self,
-            _key: &str,
-            _org_id: Option<i64>,
-            _namespace: &str,
-        ) -> Result<Option<Settings>> {
-            Ok(None)
-        }
+        async fn insert_organization(&self, _new_org: NewOrganization) -> Result<Organization> { unimplemented!() }
+        async fn list_organizations(&self) -> Result<Vec<Organization>> { Ok(Vec::new()) }
+        async fn find_by_secret_key(&self, _key: Uuid) -> Result<Option<Organization>> { Ok(None) }
+        async fn rotate_secret_key(&self, _id: i64) -> Result<Uuid> { Ok(Uuid::new_v4()) }
+        async fn delete_organization(&self, _id: i64) -> Result<()> { Ok(()) }
     }
 
     #[tokio::test]
@@ -1119,10 +1161,12 @@ mod tests {
         let jwt_service = Arc::new(JwtService::new(jwt_secret));
         let settings_repo = Arc::new(MockSettingsRepository);
         let settings_service = Arc::new(SettingsService::new(settings_repo));
+        let org_repo = Arc::new(MockOrganizationRepository);
 
         let service = UserService::new(
             user_repo,
             group_repo,
+            org_repo,
             password_reset_repo,
             jwt_service,
             settings_service,
@@ -1146,5 +1190,60 @@ mod tests {
         let user = result.unwrap();
         assert_eq!(user.email, "test@example.com");
         assert_eq!(user.namespace, "default");
+    }
+
+    #[tokio::test]
+    async fn test_resolve_group_ids_auto_create() {
+        // Setup
+        let user_repo = Arc::new(MockUserRepository::new());
+        let password_reset_repo = Arc::new(MockPasswordResetRepository);
+        let jwt_service = Arc::new(JwtService::new("secret"));
+        let settings_repo = Arc::new(MockSettingsRepository);
+        let settings_service = Arc::new(SettingsService::new(settings_repo));
+        let org_repo = Arc::new(MockOrganizationRepository);
+
+        // Custom MockGroupRepository that fails find_by_name but implements insert_group
+        struct AutoCreateGroupMock;
+        #[async_trait]
+        impl GroupRepository for AutoCreateGroupMock {
+            async fn find_by_name(&self, _n: &str, _oid: i64, _ns: &str) -> Result<Option<Group>> {
+                Ok(None)
+            }
+            async fn insert_group(&self, ng: NewGroup, _ns: &str) -> Result<Group> {
+                Ok(Group {
+                    group_id: 123,
+                    external_id: ng.external_id,
+                    organization_id: ng.organization_id,
+                    name: ng.name,
+                    description: ng.description,
+                    created_at: Utc::now(),
+                    updated_at: Utc::now(),
+                })
+            }
+            async fn find_by_id(&self, _: i64, _: &str) -> Result<Option<Group>> { Ok(None) }
+            async fn list_groups(&self, _: i64, _: &str) -> Result<Vec<Group>> { Ok(Vec::new()) }
+            async fn assign_user_to_group(&self, _: i64, _: i64, _: Option<i64>, _: &str) -> Result<()> { Ok(()) }
+            async fn remove_user_from_group(&self, _: i64, _: i64, _: &str) -> Result<()> { Ok(()) }
+            async fn get_group_policies(&self, _: i64, _: &str) -> Result<Vec<Policy>> { Ok(Vec::new()) }
+        }
+
+        let group_repo = Arc::new(AutoCreateGroupMock);
+        let service = UserService::new(
+            user_repo,
+            group_repo,
+            org_repo,
+            password_reset_repo,
+            jwt_service,
+            settings_service,
+            None,
+        );
+
+        // Act
+        let result = service.resolve_group_ids(vec!["users".to_string(), "admin".to_string()], 1, "test").await;
+
+        // Assert
+        assert!(result.is_ok());
+        let ids = result.unwrap();
+        assert_eq!(ids, vec![123, 123]); // Both match the same insert logic in this simplified mock
     }
 }

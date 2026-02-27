@@ -1067,6 +1067,16 @@ impl OrganizationRepository for PgOrganizationRepository {
         .await?;
         Ok(rec)
     }
+    
+    async fn find_by_namespace(&self, namespace: &str) -> Result<Option<Organization>> {
+        let rec = sqlx::query_as::<_, Organization>(
+            r#"SELECT organization_id, external_id, name, description, secret_key, namespace, base_url, created_at, updated_at FROM organizations WHERE namespace = $1"#,
+        )
+        .bind(namespace)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(rec)
+    }
 
     async fn insert_organization(&self, new_org: NewOrganization) -> Result<Organization> {
         let mut tx = self.pool.begin().await?;

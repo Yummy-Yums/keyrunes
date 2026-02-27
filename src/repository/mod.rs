@@ -302,6 +302,7 @@ pub trait SettingsRepository: Send + Sync + 'static {
 pub trait OrganizationRepository: Send + Sync + 'static {
     async fn find_by_name(&self, name: &str) -> Result<Option<Organization>>;
     async fn find_by_id(&self, organization_id: i64) -> Result<Option<Organization>>;
+    async fn find_by_namespace(&self, namespace: &str) -> Result<Option<Organization>>;
     async fn insert_organization(&self, new_org: NewOrganization) -> Result<Organization>;
     async fn list_organizations(&self) -> Result<Vec<Organization>>;
     async fn find_by_secret_key(&self, secret_key: Uuid) -> Result<Option<Organization>>;

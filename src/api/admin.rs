@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use crate::repository::sqlx_impl::{
     PgGroupRepository, PgPasswordResetRepository, PgPolicyRepository, PgSettingsRepository,
-    PgUserRepository,
+    PgUserRepository, PgOrganizationRepository,
 };
 use crate::services::{
     group_service::{CreateGroupRequest, GroupService},
@@ -25,6 +25,7 @@ type UserServiceType = UserService<
     PgGroupRepository,
     PgPasswordResetRepository,
     PgSettingsRepository,
+    PgOrganizationRepository,
 >;
 #[allow(dead_code)]
 type GroupServiceType = GroupService<PgGroupRepository>;

@@ -1,5 +1,6 @@
 use crate::repository::sqlx_impl::{
     PgGroupRepository, PgPasswordResetRepository, PgSettingsRepository, PgUserRepository,
+    PgOrganizationRepository,
 };
 use crate::services::user_service::{
     ChangePasswordRequest, RegisterRequest, UpdateProfileRequest, UserService,
@@ -18,6 +19,7 @@ type UserServiceType = UserService<
     PgGroupRepository,
     PgPasswordResetRepository,
     PgSettingsRepository,
+    PgOrganizationRepository,
 >;
 
 #[derive(serde::Deserialize)]
@@ -73,6 +75,7 @@ pub async fn register_post(
         username: payload.username,
         password: payload.password,
         first_login: Some(payload.first_login),
+        group: None,
     };
 
     match service.register(req, &payload.namespace).await {

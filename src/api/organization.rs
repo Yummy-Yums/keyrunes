@@ -25,6 +25,7 @@ type UserSvc = UserService<
     PgGroupRepository,
     PgPasswordResetRepository,
     PgSettingsRepository,
+    PgOrganizationRepository,
 >;
 
 #[derive(Serialize, ToSchema)]

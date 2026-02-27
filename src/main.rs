@@ -106,6 +106,7 @@ async fn main() -> anyhow::Result<()> {
     let user_service = Arc::new(UserService::new(
         user_repo,
         group_repo.clone(),
+        organization_repo.clone(),
         password_reset_repo,
         jwt_service.clone(),
         settings_service,

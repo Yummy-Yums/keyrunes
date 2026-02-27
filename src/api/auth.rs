@@ -9,6 +9,7 @@ use std::sync::Arc;
 use crate::handler::errors::ErrorResponse;
 use crate::repository::sqlx_impl::{
     PgGroupRepository, PgPasswordResetRepository, PgSettingsRepository, PgUserRepository,
+    PgOrganizationRepository,
 };
 use crate::services::user_service::{
     AuthResponse, ChangePasswordRequest, ForgotPasswordRequest, RegisterRequest,
@@ -32,6 +33,8 @@ pub struct RegisterApi {
     pub organization_id: Option<i64>,
     #[schema(example = "tenant_namespace")]
     pub namespace: String,
+    #[schema(example = "users")]
+    pub group: Option<String>,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -91,6 +94,7 @@ type UserServiceType = UserService<
     PgGroupRepository,
     PgPasswordResetRepository,
     PgSettingsRepository,
+    PgOrganizationRepository,
 >;
 
 /// POST /api/register
@@ -114,10 +118,11 @@ pub async fn register_api(
         username: payload.username,
         password: payload.password,
         first_login: Some(true),
+        group: payload.group,
     };
 
     match service.register(req, &payload.namespace).await {
-        Ok(auth_response) => (StatusCode::CREATED, Json(auth_response)).into_response(),
+        Ok(auth_response) => (StatusCode::CREATED, Json(auth_response.user)).into_response(),
         Err(e) => {
             tracing::error!("Registration failed: {:?}", e);
             ErrorResponse::bad_request(e.to_string()).into_response()
@@ -408,6 +413,7 @@ mod tests {
             password: "password123".to_string(),
             organization_id: None,
             namespace: "public".to_string(),
+            group: None,
         };
 
         assert_eq!(payload.email, "test@example.com");

@@ -151,6 +151,10 @@ mod tests {
                 .find(|o| o.organization_id == organization_id)
                 .cloned())
         }
+        async fn find_by_namespace(&self, namespace: &str) -> Result<Option<Organization>> {
+            let orgs = self.orgs.lock().unwrap();
+            Ok(orgs.iter().find(|o| o.namespace == namespace).cloned())
+        }
         async fn insert_organization(&self, new_org: NewOrganization) -> Result<Organization> {
             let mut orgs = self.orgs.lock().unwrap();
             let org = Organization {

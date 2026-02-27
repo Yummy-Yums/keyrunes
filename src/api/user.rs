@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use crate::repository::sqlx_impl::{
     PgGroupRepository, PgPasswordResetRepository, PgSettingsRepository, PgUserRepository,
+    PgOrganizationRepository,
 };
 
 type UserServiceType = UserService<
@@ -12,6 +13,7 @@ type UserServiceType = UserService<
     PgGroupRepository,
     PgPasswordResetRepository,
     PgSettingsRepository,
+    PgOrganizationRepository,
 >;
 
 /// PATCH /api/user/profile

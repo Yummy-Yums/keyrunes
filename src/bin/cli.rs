@@ -45,6 +45,8 @@ enum Commands {
         first_login: bool,
         #[clap(long, default_value = "public")]
         namespace: String,
+        #[clap(long)]
+        group: Option<String>,
     },
     /// Create first superadmin user
     CreateSuperadmin {
@@ -169,6 +171,7 @@ async fn main() -> anyhow::Result<()> {
     let service = Arc::new(UserService::new(
         user_repo,
         Arc::clone(&group_repo),
+        org_repo.clone(),
         password_reset_repo.clone(),
         jwt_service.clone(),
         settings_service,
@@ -183,6 +186,7 @@ async fn main() -> anyhow::Result<()> {
             password,
             first_login,
             namespace,
+            group,
         } => {
             let req = RegisterRequest {
                 organization_id,
@@ -190,6 +194,7 @@ async fn main() -> anyhow::Result<()> {
                 username,
                 password,
                 first_login: Some(first_login),
+                group,
             };
             match service.register(req, &namespace).await {
                 Ok(u) => println!(
@@ -210,6 +215,7 @@ async fn main() -> anyhow::Result<()> {
                 username: username.clone(),
                 password,
                 first_login: Some(false),
+                group: None,
             };
 
             match service.register(req, DEFAULT_NAMESPACE).await {
