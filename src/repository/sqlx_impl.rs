@@ -1105,13 +1105,28 @@ impl OrganizationRepository for PgOrganizationRepository {
         sqlx::query(&set_path_query).execute(&mut *tx).await?;
 
         let init_script = include_str!("../../migrations/tenant/001_init_tenant.sql");
-    let populated_script = init_script.replace("__ORG_ID__", &rec.organization_id.to_string());
-    for statement in populated_script.split(';') {
+        let populated_script = init_script.replace("__ORG_ID__", &rec.organization_id.to_string());
+        for statement in populated_script.split(';') {
             let trimmed = statement.trim();
             if !trimmed.is_empty() {
                 sqlx::query(trimmed).execute(&mut *tx).await?;
             }
         }
+
+        sqlx::query(&format!(
+            "ALTER TABLE \"{}\".groups DROP CONSTRAINT IF EXISTS groups_name_key",
+            schema_name
+        ))
+        .execute(&mut *tx)
+        .await?;
+
+        sqlx::query(&format!(
+            "ALTER TABLE \"{}\".groups ADD CONSTRAINT groups_name_org_key UNIQUE (name, organization_id)",
+            schema_name
+        ))
+        .execute(&mut *tx)
+        .await
+        .ok();
 
         tx.commit().await?;
 

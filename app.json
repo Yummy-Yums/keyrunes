@@ -6,5 +6,13 @@
         "rust",
         "security"
     ],
+    "healthchecks": {
+        "/api/health": {
+            "type": "startup",
+            "interval": 30,
+            "timeout": 10,
+            "retries": 3
+        }
+    },
     "scripts": {}
 }

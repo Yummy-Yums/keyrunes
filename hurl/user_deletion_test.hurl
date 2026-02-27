@@ -4,16 +4,15 @@
 POST http://localhost:3000/api/register
 Content-Type: application/json
 {
-    "email": "todelete_global_v2@example.com",
-    "username": "todelete_global_v2",
+    "email": "todelete_{{TEST_TIMESTAMP}}@example.com",
+    "username": "todelete_{{TEST_TIMESTAMP}}",
     "password": "password123",
     "organization_id": 1,
     "namespace": "public"
 }
 HTTP 201
 [Captures]
-global_user_id: jsonpath "$.user.user_id"
-global_user_token: jsonpath "$.token"
+global_user_id: jsonpath "$.user_id"
 
 # 2. Authenticate as Global Superadmin (from previous tests or default)
 POST http://localhost:3000/api/login
@@ -37,7 +36,7 @@ HTTP 204
 POST http://localhost:3000/api/login
 Content-Type: application/json
 {
-    "identity": "todelete_global_v2",
+    "identity": "todelete_{{TEST_TIMESTAMP}}",
     "password": "password123",
     "namespace": "public"
 }

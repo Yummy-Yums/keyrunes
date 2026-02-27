@@ -19,7 +19,7 @@ POST {{BASE_URL}}/api/register
 }
 HTTP 201
 [Captures]
-user_id: jsonpath "$.user.user_id"
+user_id: jsonpath "$.user_id"
 
 # 2. Create a Group
 POST {{BASE_URL}}/api/admin/groups

@@ -62,10 +62,9 @@ POST {{BASE_URL}}/api/register
 }
 HTTP 201
 [Asserts]
-jsonpath "$.user.organization_id" == {{org_id}}
+jsonpath "$.organization_id" == {{org_id}}
 [Captures]
-admin_user_id: jsonpath "$.user.user_id"
-admin_token_from_register: jsonpath "$.token"
+admin_user_id: jsonpath "$.user_id"
 
 # 7. Login as the Admin User (verify login works)
 POST {{BASE_URL}}/api/login

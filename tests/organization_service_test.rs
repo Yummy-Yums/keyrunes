@@ -38,6 +38,11 @@ impl OrganizationRepository for MockOrganizationRepository {
             .cloned())
     }
 
+    async fn find_by_namespace(&self, namespace: &str) -> Result<Option<Organization>> {
+        let orgs = self.organizations.lock().unwrap();
+        Ok(orgs.iter().find(|o| o.namespace == namespace).cloned())
+    }
+
     async fn insert_organization(&self, new_org: NewOrganization) -> Result<Organization> {
         let mut orgs = self.organizations.lock().unwrap();
         let org = Organization {

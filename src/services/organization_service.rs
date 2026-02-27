@@ -62,30 +62,30 @@ impl<O: OrganizationRepository, G: GroupRepository> OrganizationService<O, G> {
 
         let org = self.repo.insert_organization(new_org).await?;
 
-        // Create default groups
-        self.group_repo
-            .insert_group(
-                NewGroup {
-                    external_id: Uuid::new_v4(),
-                    organization_id: org.organization_id,
-                    name: ADMIN_GROUP.to_string(),
-                    description: Some("Administrators of the organization".to_string()),
-                },
-                &req.namespace,
-            )
-            .await?;
-
-        self.group_repo
-            .insert_group(
-                NewGroup {
-                    external_id: Uuid::new_v4(),
-                    organization_id: org.organization_id,
-                    name: USERS_GROUP.to_string(),
-                    description: Some("Standard users of the organization".to_string()),
-                },
-                &req.namespace,
-            )
-            .await?;
+        // Create default groups if they don't exist
+        for group_name in [ADMIN_GROUP, USERS_GROUP] {
+            if self
+                .group_repo
+                .find_by_name(group_name, org.organization_id, &req.namespace)
+                .await?
+                .is_none()
+            {
+                self.group_repo
+                    .insert_group(
+                        NewGroup {
+                            external_id: Uuid::new_v4(),
+                            organization_id: org.organization_id,
+                            name: group_name.to_string(),
+                            description: Some(match group_name {
+                                ADMIN_GROUP => "Administrators of the organization".to_string(),
+                                _ => "Standard users of the organization".to_string(),
+                            }),
+                        },
+                        &req.namespace,
+                    )
+                    .await?;
+            }
+        }
 
         Ok(org)
     }

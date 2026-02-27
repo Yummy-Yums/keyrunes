@@ -993,6 +993,19 @@ mod tests {
         async fn find_by_id(&self, _organization_id: i64) -> anyhow::Result<Option<Organization>> {
             Ok(None)
         }
+        async fn find_by_namespace(&self, namespace: &str) -> anyhow::Result<Option<Organization>> {
+            Ok(Some(Organization {
+                organization_id: 1,
+                external_id: Uuid::new_v4(),
+                name: "Default".to_string(),
+                secret_key: Uuid::new_v4(),
+                created_at: chrono::Utc::now(),
+                updated_at: chrono::Utc::now(),
+                description: None,
+                base_url: None,
+                namespace: namespace.to_string(),
+            }))
+        }
         async fn insert_organization(
             &self,
             _new_org: NewOrganization,
@@ -1032,6 +1045,7 @@ mod tests {
         let service = UserService::new(
             user_repo.clone(),
             group_repo,
+            Arc::new(MockOrganizationRepo),
             password_reset_repo,
             jwt_service,
             settings_service,
@@ -1075,6 +1089,7 @@ mod tests {
         let service = UserService::new(
             user_repo,
             group_repo,
+            Arc::new(MockOrganizationRepo),
             password_reset_repo,
             jwt_service,
             settings_service,
@@ -1106,6 +1121,7 @@ mod tests {
         let service = UserService::new(
             user_repo,
             group_repo,
+            Arc::new(MockOrganizationRepo),
             password_reset_repo,
             jwt_service.clone(),
             settings_service.clone(),
@@ -1185,6 +1201,7 @@ mod tests {
         let service = UserService::new(
             user_repo,
             group_repo,
+            Arc::new(MockOrganizationRepo),
             password_reset_repo,
             jwt_service,
             settings_service,

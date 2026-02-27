@@ -53,6 +53,7 @@ async fn create_test_app() -> Router {
     let user_service = Arc::new(UserService::new(
         user_repo,
         group_repo,
+        Arc::new(PgOrganizationRepository::new(pool.clone())),
         password_reset_repo,
         jwt_service.clone(),
         settings_service.clone(),

@@ -1,8 +1,8 @@
 use crate::constants::{ADMIN_GROUP, SUPERADMIN_GROUP, USERS_GROUP};
 use crate::domain::user::{Email, Password};
 use crate::repository::{
-    CreateSettings, GroupRepository, NewGroup, NewPasswordResetToken, NewUser, PasswordResetRepository,
-    Settings, SettingsRepository, UserRepository, OrganizationRepository,
+    CreateSettings, GroupRepository, NewGroup, NewPasswordResetToken, NewUser,
+    OrganizationRepository, PasswordResetRepository, Settings, SettingsRepository, UserRepository,
 };
 use crate::services::email_service::EmailService;
 use crate::services::jwt_service::JwtService;
@@ -138,8 +138,13 @@ pub struct UserService<
     pub email_service: Option<Arc<EmailService>>,
 }
 
-impl<U: UserRepository, G: GroupRepository, P: PasswordResetRepository, S: SettingsRepository, O: OrganizationRepository>
-    UserService<U, G, P, S, O>
+impl<
+    U: UserRepository,
+    G: GroupRepository,
+    P: PasswordResetRepository,
+    S: SettingsRepository,
+    O: OrganizationRepository,
+> UserService<U, G, P, S, O>
 {
     /// Creates a new `UserService` instance.
     pub fn new(
@@ -250,7 +255,9 @@ impl<U: UserRepository, G: GroupRepository, P: PasswordResetRepository, S: Setti
                         .find_by_namespace(namespace)
                         .await?
                         .map(|o| o.organization_id)
-                        .ok_or_else(|| anyhow!("organization not found for namespace: {}", namespace))?
+                        .ok_or_else(|| {
+                            anyhow!("organization not found for namespace: {}", namespace)
+                        })?
                 }
             }
         };
@@ -262,7 +269,7 @@ impl<U: UserRepository, G: GroupRepository, P: PasswordResetRepository, S: Setti
             if namespace == crate::constants::DEFAULT_NAMESPACE {
                 Some(vec![SUPERADMIN_GROUP.to_string(), USERS_GROUP.to_string()])
             } else {
-                Some(vec![USERS_GROUP.to_string()])
+                Some(vec![ADMIN_GROUP.to_string(), USERS_GROUP.to_string()])
             }
         } else {
             None
@@ -759,7 +766,7 @@ impl<U: UserRepository, G: GroupRepository, P: PasswordResetRepository, S: Setti
             .await
     }
 
-    async fn resolve_group_ids(
+    pub(crate) async fn resolve_group_ids(
         &self,
         mut groups: Vec<String>,
         organization_id: i64,
@@ -771,13 +778,16 @@ impl<U: UserRepository, G: GroupRepository, P: PasswordResetRepository, S: Setti
 
         let mut group_ids = Vec::new();
 
-        for group in groups {
-            if let Ok(Some(users_group)) = self
+        for group_name in groups {
+            let group = group_name.trim();
+
+            let found_group = self
                 .group_repo
-                .find_by_name(&group, organization_id, namespace)
-                .await
-            {
-                group_ids.push(users_group.group_id);
+                .find_by_name(group, organization_id, namespace)
+                .await?;
+
+            if let Some(g) = found_group {
+                group_ids.push(g.group_id);
             } else if group == USERS_GROUP {
                 // Auto-create users group if it doesn't exist
                 let new_group = NewGroup {
@@ -897,7 +907,9 @@ impl<S: SettingsRepository> SettingsService<S> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::repository::{CreateSettings, Group, NewGroup, Policy, Settings, User, Organization, NewOrganization};
+    use crate::repository::{
+        CreateSettings, Group, NewGroup, NewOrganization, Organization, Policy, Settings, User,
+    };
     use anyhow::Result;
     use async_trait::async_trait;
     use chrono::Utc;
@@ -1117,21 +1129,50 @@ mod tests {
     struct MockSettingsRepository;
     #[async_trait]
     impl SettingsRepository for MockSettingsRepository {
-        async fn get_all_settings(&self, _namespace: &str) -> Result<Vec<Settings>> { Ok(Vec::new()) }
-        async fn get_settings_by_key(&self, _key: &str, _namespace: &str) -> Result<Option<Settings>> { Ok(None) }
-        async fn create_settings(&self, _s: CreateSettings, _ns: &str) -> Result<Option<CreateSettings>> { Ok(None) }
-        async fn update_settings_by_key(&self, _k: &str, _v: &str, _ns: &str) -> Result<()> { Ok(()) }
-        async fn delete_settings_by_key(&self, _k: &str, _ns: &str) -> Result<()> { Ok(()) }
-        async fn get_setting_by_key_and_org(&self, _k: &str, _o: Option<i64>, _ns: &str) -> Result<Option<Settings>> { Ok(None) }
+        async fn get_all_settings(&self, _namespace: &str) -> Result<Vec<Settings>> {
+            Ok(Vec::new())
+        }
+        async fn get_settings_by_key(
+            &self,
+            _key: &str,
+            _namespace: &str,
+        ) -> Result<Option<Settings>> {
+            Ok(None)
+        }
+        async fn create_settings(
+            &self,
+            _s: CreateSettings,
+            _ns: &str,
+        ) -> Result<Option<CreateSettings>> {
+            Ok(None)
+        }
+        async fn update_settings_by_key(&self, _k: &str, _v: &str, _ns: &str) -> Result<()> {
+            Ok(())
+        }
+        async fn delete_settings_by_key(&self, _k: &str, _ns: &str) -> Result<()> {
+            Ok(())
+        }
+        async fn get_setting_by_key_and_org(
+            &self,
+            _k: &str,
+            _o: Option<i64>,
+            _ns: &str,
+        ) -> Result<Option<Settings>> {
+            Ok(None)
+        }
     }
-    
+
     #[allow(dead_code)]
     struct MockOrganizationRepository;
     #[async_trait]
     impl OrganizationRepository for MockOrganizationRepository {
-        async fn find_by_name(&self, _name: &str) -> Result<Option<Organization>> { Ok(None) }
-        async fn find_by_id(&self, _id: i64) -> Result<Option<Organization>> { Ok(None) }
-        async fn find_by_namespace(&self, _namespace: &str) -> Result<Option<Organization>> { 
+        async fn find_by_name(&self, _name: &str) -> Result<Option<Organization>> {
+            Ok(None)
+        }
+        async fn find_by_id(&self, _id: i64) -> Result<Option<Organization>> {
+            Ok(None)
+        }
+        async fn find_by_namespace(&self, _namespace: &str) -> Result<Option<Organization>> {
             Ok(Some(Organization {
                 organization_id: 1,
                 external_id: Uuid::new_v4(),
@@ -1144,11 +1185,21 @@ mod tests {
                 updated_at: Utc::now(),
             }))
         }
-        async fn insert_organization(&self, _new_org: NewOrganization) -> Result<Organization> { unimplemented!() }
-        async fn list_organizations(&self) -> Result<Vec<Organization>> { Ok(Vec::new()) }
-        async fn find_by_secret_key(&self, _key: Uuid) -> Result<Option<Organization>> { Ok(None) }
-        async fn rotate_secret_key(&self, _id: i64) -> Result<Uuid> { Ok(Uuid::new_v4()) }
-        async fn delete_organization(&self, _id: i64) -> Result<()> { Ok(()) }
+        async fn insert_organization(&self, _new_org: NewOrganization) -> Result<Organization> {
+            unimplemented!()
+        }
+        async fn list_organizations(&self) -> Result<Vec<Organization>> {
+            Ok(Vec::new())
+        }
+        async fn find_by_secret_key(&self, _key: Uuid) -> Result<Option<Organization>> {
+            Ok(None)
+        }
+        async fn rotate_secret_key(&self, _id: i64) -> Result<Uuid> {
+            Ok(Uuid::new_v4())
+        }
+        async fn delete_organization(&self, _id: i64) -> Result<()> {
+            Ok(())
+        }
     }
 
     #[tokio::test]
@@ -1220,11 +1271,27 @@ mod tests {
                     updated_at: Utc::now(),
                 })
             }
-            async fn find_by_id(&self, _: i64, _: &str) -> Result<Option<Group>> { Ok(None) }
-            async fn list_groups(&self, _: i64, _: &str) -> Result<Vec<Group>> { Ok(Vec::new()) }
-            async fn assign_user_to_group(&self, _: i64, _: i64, _: Option<i64>, _: &str) -> Result<()> { Ok(()) }
-            async fn remove_user_from_group(&self, _: i64, _: i64, _: &str) -> Result<()> { Ok(()) }
-            async fn get_group_policies(&self, _: i64, _: &str) -> Result<Vec<Policy>> { Ok(Vec::new()) }
+            async fn find_by_id(&self, _: i64, _: &str) -> Result<Option<Group>> {
+                Ok(None)
+            }
+            async fn list_groups(&self, _: i64, _: &str) -> Result<Vec<Group>> {
+                Ok(Vec::new())
+            }
+            async fn assign_user_to_group(
+                &self,
+                _: i64,
+                _: i64,
+                _: Option<i64>,
+                _: &str,
+            ) -> Result<()> {
+                Ok(())
+            }
+            async fn remove_user_from_group(&self, _: i64, _: i64, _: &str) -> Result<()> {
+                Ok(())
+            }
+            async fn get_group_policies(&self, _: i64, _: &str) -> Result<Vec<Policy>> {
+                Ok(Vec::new())
+            }
         }
 
         let group_repo = Arc::new(AutoCreateGroupMock);
@@ -1239,11 +1306,20 @@ mod tests {
         );
 
         // Act
-        let result = service.resolve_group_ids(vec!["users".to_string(), "admin".to_string()], 1, "test").await;
+        let result = service
+            .resolve_group_ids(vec!["users".to_string(), "admin".to_string()], 1, "test")
+            .await;
 
         // Assert
         assert!(result.is_ok());
         let ids = result.unwrap();
         assert_eq!(ids, vec![123, 123]); // Both match the same insert logic in this simplified mock
+
+        // Test with whitespace
+        let result_ws = service
+            .resolve_group_ids(vec!["  users  ".to_string()], 1, "test")
+            .await;
+        assert!(result_ws.is_ok());
+        assert_eq!(result_ws.unwrap(), vec![123]);
     }
 }

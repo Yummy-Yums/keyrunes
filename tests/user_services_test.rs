@@ -21,8 +21,13 @@ type Store<T> = Arc<Mutex<Vec<T>>>;
 type GroupStore = Store<Group>;
 type UserGroupStore = Store<UserGroup>;
 type SettingsStore = Store<Settings>;
-type UserServiceType =
-    UserService<MockRepo, MockGroupRepository, MockPasswordResetRepository, MockSettingsRepository>;
+type UserServiceType = UserService<
+    MockRepo,
+    MockGroupRepository,
+    MockPasswordResetRepository,
+    MockSettingsRepository,
+    MockOrganizationRepository,
+>;
 
 fn create_stores() -> (GroupStore, UserGroupStore) {
     let group_store = Arc::new(Mutex::new(Vec::new()));
@@ -206,6 +211,7 @@ async fn test_delete_user() {
         password: "Password123".to_string(),
         first_login: Some(false),
         organization_id: None,
+        group: None,
     };
     let auth_response = service.register(req, DEFAULT_NAMESPACE).await.unwrap();
     let user_id = auth_response.user.user_id;
@@ -474,6 +480,13 @@ impl OrganizationRepository for MockOrganizationRepository {
             DEFAULT_NAMESPACE.to_string(),
         )))
     }
+    async fn find_by_namespace(&self, namespace: &str) -> Result<Option<Organization>> {
+        Ok(Some(OrganizationFactory::create_organization(
+            keyrunes::constants::DEFAULT_ORGANIZATION_ID,
+            "Default".to_string(),
+            namespace.to_string(),
+        )))
+    }
     async fn insert_organization(&self, _new_org: NewOrganization) -> Result<Organization> {
         unimplemented!()
     }
@@ -512,6 +525,7 @@ fn helper_service() -> UserServiceType {
     let service = UserService::new(
         user_repo,
         group_repo,
+        Arc::new(MockOrganizationRepository),
         password_reset_repo,
         jwt_service,
         settings_service,
@@ -608,6 +622,7 @@ async fn test_register_and_login() {
         password: "Password123".to_string(),
         first_login: Some(false),
         organization_id: None,
+        group: None,
     };
 
     // Act
@@ -684,6 +699,7 @@ async fn test_duplicate_registration() {
     let service = UserService::new(
         user_repo.clone(),
         group_repo,
+        Arc::new(MockOrganizationRepository),
         password_reset_repo,
         jwt_service,
         settings_service,
@@ -697,6 +713,7 @@ async fn test_duplicate_registration() {
         password: "Password123".to_string(),
         first_login: Some(false),
         organization_id: None,
+        group: None,
     };
 
     // Act
@@ -737,6 +754,7 @@ async fn test_password_validation() {
     let service = UserService::new(
         user_repo,
         group_repo,
+        Arc::new(MockOrganizationRepository),
         password_reset_repo,
         jwt_service,
         settings_service,
@@ -750,6 +768,7 @@ async fn test_password_validation() {
         password: "short".to_string(),
         first_login: Some(false),
         organization_id: None,
+        group: None,
     };
 
     // Act
@@ -781,6 +800,7 @@ async fn test_email_validation() {
     let service = UserService::new(
         user_repo,
         group_repo,
+        Arc::new(MockOrganizationRepository),
         password_reset_repo,
         jwt_service,
         settings_service,
@@ -794,6 +814,7 @@ async fn test_email_validation() {
         password: "Password123".to_string(),
         first_login: Some(false),
         organization_id: None,
+        group: None,
     };
 
     // Act
@@ -816,6 +837,7 @@ async fn test_change_password() {
         password: "OldPassword123".to_string(),
         first_login: Some(true),
         organization_id: None,
+        group: None,
     };
 
     let auth_response = service.register(req, DEFAULT_NAMESPACE).await.unwrap();
@@ -877,6 +899,7 @@ async fn admin_create_user_with_groups() {
     let service = UserService::new(
         user_repo,
         group_repo.clone(),
+        Arc::new(MockOrganizationRepository),
         password_reset_repo,
         jwt_service,
         settings_service,
@@ -989,6 +1012,7 @@ async fn test_register_first_user_in_namespace() {
         password: "Password123".to_string(),
         first_login: None,
         organization_id: Some(1),
+        group: None,
     };
     let res1 = service.register(reg1, DEFAULT_NAMESPACE).await.unwrap();
 
@@ -1003,6 +1027,7 @@ async fn test_register_first_user_in_namespace() {
         password: "Password123".to_string(),
         first_login: None,
         organization_id: Some(2),
+        group: None,
     };
     let res2 = service.register(reg2, "org_2").await.unwrap();
 
