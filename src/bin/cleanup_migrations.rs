@@ -4,7 +4,7 @@ use std::env;
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let url = env::var("DATABASE_URL")
-        .unwrap_or_else(|_| "postgres://postgres_user:pass123@localhost:5432/keyrunes".to_string());
+        .unwrap_or_else(|_| "postgres://postgres:password@localhost:5432/keyrunes".to_string());
     let pool = PgPool::connect(&url).await?;
 
     println!("Cleaning up _sqlx_migrations in {}...", url);

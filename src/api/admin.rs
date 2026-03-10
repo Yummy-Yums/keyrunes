@@ -480,8 +480,10 @@ pub async fn check_permission(
 /// DELETE /api/admin/users/:user_id
 pub async fn delete_user(
     Extension(admin): Extension<AuthenticatedUser>,
+    Extension(pool): Extension<sqlx::PgPool>,
     Extension(user_service): Extension<Arc<UserServiceType>>,
     Path(user_id): Path<i64>,
+    axum::extract::Query(params): axum::extract::Query<OrgIdParam>,
 ) -> impl IntoResponse {
     if !admin.groups.contains(&SUPERADMIN_GROUP.to_string())
         && !admin.groups.contains(&"admin".to_string())
@@ -489,11 +491,20 @@ pub async fn delete_user(
         return (StatusCode::FORBIDDEN, "Admin access required").into_response();
     }
 
-    if admin.user_id == user_id {
+    if admin.user_id == user_id && admin.namespace != "public" {
         return (StatusCode::BAD_REQUEST, "Cannot delete yourself").into_response();
     }
 
-    match user_service.delete_user(user_id, &admin.namespace).await {
+    let org_id = params
+        .org_id
+        .unwrap_or(crate::constants::DEFAULT_ORGANIZATION_ID);
+
+    let namespace = match crate::api::admin::get_org_namespace_safe(&pool, &admin, org_id).await {
+        Ok(ns) => ns,
+        Err(e) => return e.into_response(),
+    };
+
+    match user_service.delete_user(user_id, &namespace).await {
         Ok(_) => (StatusCode::NO_CONTENT, ()).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }

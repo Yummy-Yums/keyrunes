@@ -268,9 +268,17 @@ impl UserRepository for PgUserRepository {
             .execute(&mut *tx)
             .await?;
 
-        sqlx::query!("DELETE FROM users WHERE user_id = $1", user_id)
+        let result = sqlx::query!("DELETE FROM users WHERE user_id = $1", user_id)
             .execute(&mut *tx)
             .await?;
+
+        if result.rows_affected() == 0 {
+            return Err(anyhow::anyhow!(
+                "User with ID {} not found in organization/namespace '{}'",
+                user_id,
+                namespace
+            ));
+        }
 
         tx.commit().await?;
         Ok(())

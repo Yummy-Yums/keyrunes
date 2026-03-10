@@ -53,7 +53,7 @@ async fn main() -> anyhow::Result<()> {
     api::health::init_health_check();
 
     let database_url = std::env::var("DATABASE_URL")
-        .unwrap_or_else(|_| "postgres://postgres_user:pass123@localhost:5432/keyrunes".into());
+        .unwrap_or_else(|_| "postgres://postgres:password@localhost:5432/keyrunes".into());
 
     let conn_options = database_url
         .parse::<PgConnectOptions>()?

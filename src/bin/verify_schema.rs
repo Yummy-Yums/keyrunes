@@ -5,9 +5,9 @@ use std::env;
 async fn main() -> anyhow::Result<()> {
     let urls = vec![
         env::var("DATABASE_URL").unwrap_or_else(|_| {
-            "postgres://postgres_user:pass123@localhost:5432/keyrunes".to_string()
+            "postgres://postgres:password@localhost:5432/keyrunes".to_string()
         }),
-        "postgres://postgres_user:pass123@localhost:5432/keyrunes_test".to_string(),
+        "postgres://postgres:password@localhost:5432/keyrunes".to_string(),
     ];
 
     for url in urls {

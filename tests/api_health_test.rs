@@ -33,7 +33,7 @@ async fn create_test_app() -> Router {
             "postgres://postgres_user:pass123@localhost:5432/keyrunes".to_string()
         }
     } else {
-        "postgres://postgres_user:pass123@localhost:5432/keyrunes".to_string()
+        "postgres://postgres:password@localhost:5432/keyrunes".to_string()
     };
 
     let pool = PgPoolOptions::new()
