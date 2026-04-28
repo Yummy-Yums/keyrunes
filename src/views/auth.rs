@@ -1,6 +1,6 @@
 use crate::repository::sqlx_impl::{
-    PgGroupRepository, PgPasswordResetRepository, PgSettingsRepository, PgUserRepository,
-    PgOrganizationRepository,
+    PgGroupRepository, PgOrganizationRepository, PgPasswordResetRepository, PgSettingsRepository,
+    PgUserRepository,
 };
 use crate::services::user_service::{
     ChangePasswordRequest, RegisterRequest, UpdateProfileRequest, UserService,

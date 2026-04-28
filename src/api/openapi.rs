@@ -9,7 +9,7 @@ use utoipa::OpenApi;
         crate::api::auth::me_api,
         crate::api::auth::forgot_password_api,
         crate::api::auth::reset_password_api,
-        
+
         crate::api::organization::get_org_key,
         crate::api::organization::rotate_org_key,
 
@@ -42,8 +42,8 @@ use utoipa::OpenApi;
 )]
 pub struct ApiDoc;
 
-use utoipa::openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme};
 use utoipa::Modify;
+use utoipa::openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme};
 
 pub struct SecurityAddon;
 
@@ -59,13 +59,11 @@ impl Modify for SecurityAddon {
                         .build(),
                 ),
             );
-             components.add_security_scheme(
+            components.add_security_scheme(
                 "api_key",
-                SecurityScheme::ApiKey(
-                    utoipa::openapi::security::ApiKey::Header(
-                        utoipa::openapi::security::ApiKeyValue::new("X-Organization-Key"),
-                    ),
-                ),
+                SecurityScheme::ApiKey(utoipa::openapi::security::ApiKey::Header(
+                    utoipa::openapi::security::ApiKeyValue::new("X-Organization-Key"),
+                )),
             );
         }
     }

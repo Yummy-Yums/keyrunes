@@ -147,12 +147,7 @@ fn test_invalid_user_id() {
 
 #[test]
 fn test_wildcard_resource_patterns() {
-    let patterns = vec![
-        "*",
-        "user:*",
-        "user:self",
-        "admin:*",
-    ];
+    let patterns = vec!["*", "user:*", "user:self", "admin:*"];
 
     for pattern in patterns {
         assert!(!pattern.is_empty());

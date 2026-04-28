@@ -4,8 +4,8 @@ use axum::{Extension, Json, http::StatusCode, response::IntoResponse};
 use std::sync::Arc;
 
 use crate::repository::sqlx_impl::{
-    PgGroupRepository, PgPasswordResetRepository, PgSettingsRepository, PgUserRepository,
-    PgOrganizationRepository,
+    PgGroupRepository, PgOrganizationRepository, PgPasswordResetRepository, PgSettingsRepository,
+    PgUserRepository,
 };
 
 type UserServiceType = UserService<

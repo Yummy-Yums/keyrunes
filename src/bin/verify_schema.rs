@@ -4,9 +4,8 @@ use std::env;
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let urls = vec![
-        env::var("DATABASE_URL").unwrap_or_else(|_| {
-            "postgres://postgres:password@localhost:5432/keyrunes".to_string()
-        }),
+        env::var("DATABASE_URL")
+            .unwrap_or_else(|_| "postgres://postgres:password@localhost:5432/keyrunes".to_string()),
         "postgres://postgres:password@localhost:5432/keyrunes".to_string(),
     ];
 

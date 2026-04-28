@@ -8,8 +8,8 @@ use std::sync::Arc;
 
 use crate::handler::errors::ErrorResponse;
 use crate::repository::sqlx_impl::{
-    PgGroupRepository, PgPasswordResetRepository, PgSettingsRepository, PgUserRepository,
-    PgOrganizationRepository,
+    PgGroupRepository, PgOrganizationRepository, PgPasswordResetRepository, PgSettingsRepository,
+    PgUserRepository,
 };
 use crate::services::user_service::{
     AuthResponse, ChangePasswordRequest, ForgotPasswordRequest, RegisterRequest,

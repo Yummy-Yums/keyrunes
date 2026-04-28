@@ -660,9 +660,8 @@ mod tests {
     async fn setup_cli_test_db() {
         dotenvy::dotenv().ok();
         let db_url = std::env::var("TEST_DATABASE_URL").unwrap_or_else(|_| {
-            std::env::var("DATABASE_URL").unwrap_or(
-                "postgres://postgres:password@localhost:5432/keyrunes".to_string(),
-            )
+            std::env::var("DATABASE_URL")
+                .unwrap_or("postgres://postgres:password@localhost:5432/keyrunes".to_string())
         });
         let pool = PgPool::connect(&db_url)
             .await
@@ -1223,9 +1222,8 @@ mod tests {
     async fn test_admin_changes_user_password_successfully() {
         setup_cli_test_db().await;
         let db_url = std::env::var("TEST_DATABASE_URL").unwrap_or_else(|_| {
-            std::env::var("DATABASE_URL").unwrap_or(
-                "postgres://postgres:password@localhost:5432/keyrunes".to_string(),
-            )
+            std::env::var("DATABASE_URL")
+                .unwrap_or("postgres://postgres:password@localhost:5432/keyrunes".to_string())
         });
 
         // Setup
@@ -1255,9 +1253,8 @@ mod tests {
     async fn test_admin_changes_user_password_unsuccessfully() {
         setup_cli_test_db().await;
         let db_url = std::env::var("TEST_DATABASE_URL").unwrap_or_else(|_| {
-            std::env::var("DATABASE_URL").unwrap_or(
-                "postgres://postgres:password@localhost:5432/keyrunes".to_string(),
-            )
+            std::env::var("DATABASE_URL")
+                .unwrap_or("postgres://postgres:password@localhost:5432/keyrunes".to_string())
         });
 
         // Setup
@@ -1288,9 +1285,8 @@ mod tests {
     async fn test_recover_user_with_url_successfully() {
         setup_cli_test_db().await;
         let db_url = std::env::var("TEST_DATABASE_URL").unwrap_or_else(|_| {
-            std::env::var("DATABASE_URL").unwrap_or(
-                "postgres://postgres:password@localhost:5432/keyrunes".to_string(),
-            )
+            std::env::var("DATABASE_URL")
+                .unwrap_or("postgres://postgres:password@localhost:5432/keyrunes".to_string())
         });
 
         // Setup
@@ -1319,9 +1315,8 @@ mod tests {
     async fn test_recover_user_with_url_unsuccessfully() {
         setup_cli_test_db().await;
         let db_url = std::env::var("TEST_DATABASE_URL").unwrap_or_else(|_| {
-            std::env::var("DATABASE_URL").unwrap_or(
-                "postgres://postgres:password@localhost:5432/keyrunes".to_string(),
-            )
+            std::env::var("DATABASE_URL")
+                .unwrap_or("postgres://postgres:password@localhost:5432/keyrunes".to_string())
         });
 
         // Setup

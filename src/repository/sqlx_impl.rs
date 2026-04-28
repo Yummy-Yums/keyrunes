@@ -1,6 +1,6 @@
 use super::*;
 use crate::constants::DEFAULT_NAMESPACE;
-use crate::repository::{User, NewUser, Group, Policy, PolicyEffect};
+use crate::repository::{Group, NewUser, Policy, PolicyEffect, User};
 use anyhow::Result;
 use async_trait::async_trait;
 use sqlx::PgPool;
@@ -297,7 +297,11 @@ impl PgSettingsRepository {
 
 #[async_trait]
 impl SettingsRepository for PgSettingsRepository {
-    async fn create_settings(&self, settings: CreateSettings, namespace: &str) -> Result<Option<CreateSettings>> {
+    async fn create_settings(
+        &self,
+        settings: CreateSettings,
+        namespace: &str,
+    ) -> Result<Option<CreateSettings>> {
         let mut tx = self.pool.begin().await?;
         sqlx::query(&format!("SET LOCAL search_path TO \"{}\"", namespace))
             .execute(&mut *tx)
@@ -423,24 +427,29 @@ impl SettingsRepository for PgSettingsRepository {
             .await?;
 
         if namespace == DEFAULT_NAMESPACE {
-             let records = sqlx::query_as!(Settings, r#"SELECT * FROM settings"#)
+            let records = sqlx::query_as!(Settings, r#"SELECT * FROM settings"#)
                 .fetch_all(&mut *tx)
                 .await?;
-             tx.commit().await?;
-             Ok(records)
+            tx.commit().await?;
+            Ok(records)
         } else {
-             let records = sqlx::query_as!(
-                 Settings, 
+            let records = sqlx::query_as!(
+                 Settings,
                  r#"SELECT settings_id, NULL::bigint as organization_id, key, value, description, created_at, updated_at FROM settings"#
              )
                 .fetch_all(&mut *tx)
                 .await?;
-             tx.commit().await?;
-             Ok(records)
+            tx.commit().await?;
+            Ok(records)
         }
     }
 
-    async fn update_settings_by_key(&self, key: &str, updated_value: &str, namespace: &str) -> Result<()> {
+    async fn update_settings_by_key(
+        &self,
+        key: &str,
+        updated_value: &str,
+        namespace: &str,
+    ) -> Result<()> {
         let mut tx = self.pool.begin().await?;
         sqlx::query(&format!("SET LOCAL search_path TO \"{}\"", namespace))
             .execute(&mut *tx)
@@ -1075,7 +1084,7 @@ impl OrganizationRepository for PgOrganizationRepository {
         .await?;
         Ok(rec)
     }
-    
+
     async fn find_by_namespace(&self, namespace: &str) -> Result<Option<Organization>> {
         let rec = sqlx::query_as::<_, Organization>(
             r#"SELECT organization_id, external_id, name, description, secret_key, namespace, base_url, created_at, updated_at FROM organizations WHERE namespace = $1"#,
