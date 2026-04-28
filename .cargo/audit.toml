@@ -1,15 +1,4 @@
 [advisories]
 ignore = [
-    # ignore: transitive dep via sqlx → rustls. blocked on sqlx upgrading. no direct TLS usage in production.
-    "RUSTSEC-2026-0049",
-    # ignore: transitive dep via sqlx → rustls. blocked on sqlx upgrading. no direct TLS usage in production.
-    "RUSTSEC-2026-0098",
-    # ignore: transitive dep via sqlx → rustls. blocked on sqlx upgrading. no direct TLS usage in production.
-    "RUSTSEC-2026-0099",
-    # ignore: transitive dep via sqlx → rustls. blocked on sqlx upgrading. no direct TLS usage in production.
-    "RUSTSEC-2026-0104",
-    # ignore: dev/test dependency only (proptest, fake). no production impact.
-    "RUSTSEC-2026-0097",
-    # ignore: sqlx connection pool issue with transaction isolation. fixed in later versions.
     "RUSTSEC-2023-0071",
 ]
