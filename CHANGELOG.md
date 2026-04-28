@@ -1,3 +1,40 @@
+## [unreleased]
+
+### 🚀 Features
+
+- *(test)* Add Goose stress test infrastructure with 3 scenarios
+
+### 🐛 Bug Fixes
+
+- Fix delete users
+
+### ⚙️ Miscellaneous Tasks
+
+- *(ci)* Fix audit exemptions and code formatting
+- Update dependencies and resolve 5 security advisories
+- *(tests)* Remove hurl files from cargo tests directory
+## [0.2.2] - 2026-02-27
+
+### 🐛 Bug Fixes
+
+- Typo error
+- Typing error in text - pull request #34 from Yummy-Yums/main
+- *(services)* Implement auto-healing for default groups and fix broken tests
+- Problem with register new users with default groups
+
+### 💼 Other
+
+- Add config for build in dokku
+- Add config for build in dokku
+
+### 🧪 Testing
+
+- Reenable migrations and change test for async
+
+### ⚙️ Miscellaneous Tasks
+
+- Add changelogs
+- Fix app.json for dokku
 ## [0.2.0] - 2026-01-02
 
 ### 🚀 Features
