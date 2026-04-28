@@ -1,4 +1,4 @@
-.PHONY: help db-create db-drop db-reset migrate run build test test-unit test-hurl test-all clean dev setup superadmin sqlx-prepare check lint
+.PHONY: help db-create db-drop db-reset migrate run build test test-unit test-hurl test-all test-stress clean dev setup superadmin sqlx-prepare check lint
 
 # Variables
 DATABASE_URL ?= postgres://postgres_user:pass123@localhost:5432/keyrunes
@@ -110,6 +110,14 @@ test-hurl-verbose: ## Runs Hurl tests in verbose mode
 	./hurl/run_hurl_tests.sh --verbose
 
 test-all: test test-hurl ## Runs all tests (Rust + Hurl)
+
+test-stress: ## Runs Goose stress tests (requires server running)
+	@echo "Running stress tests..."
+	@if ! curl -s http://localhost:3000/api/health > /dev/null 2>&1; then \
+		echo "Server is not running! Run 'make run' first."; \
+		exit 1; \
+	fi
+	cargo test --test stress_test -- --host http://localhost:3000
 
 ## SQLx
 sqlx-prepare: ## Prepares SQLx metadata offline
